@@ -1,0 +1,85 @@
+﻿[package]
+name = "fathnotch"
+version = "0.2.0"
+edition = "2021"
+description = "A light dynamic island for Windows"
+license = "MIT"
+repository = "https://github.com/cfathurrohman/FathNotch"
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+windows-core = "0.58" # COM callbacks: #[implement]/#[interface] expand to ::windows_core paths
+
+[dependencies.windows]
+version = "0.58"
+features = [
+    # WinRT
+    "Foundation",
+    "Foundation_Collections",
+    "Foundation_Numerics", # Direct2D brush and transform signatures use it
+    "Globalization", # IANA time zone name for TickTick (services/ticktick.rs)
+    "Devices_Bluetooth",
+    "Devices_Enumeration",
+    "Devices_Radios",
+    "Devices_WiFi",
+    "Media_Control",
+    "Networking_Connectivity",
+    "Networking_NetworkOperators",
+    "Security_Credentials",
+    "Storage_Streams",
+    "Web_Http",
+    "Web_Http_Headers",
+    "ApplicationModel",
+    "UI_Notifications",
+    "UI_Notifications_Management",
+    # Win32
+    "Win32_Devices_Display",
+    "Win32_Devices_FunctionDiscovery",
+    "Win32_Foundation",
+    "Win32_Graphics_Direct2D",
+    "Win32_Graphics_Direct2D_Common",
+    "Win32_Graphics_DirectWrite",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Gdi",
+    "Win32_Graphics_Imaging",
+    "Win32_Media_Audio",
+    "Win32_Media_Audio_Endpoints",
+    "Win32_NetworkManagement_IpHelper", # system: network counters (GetIfTable2)
+    "Win32_NetworkManagement_Ndis",
+    "Win32_Security",
+    "Win32_Security_Cryptography",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Ole",
+    "Win32_System_Power", # system: battery
+    "Win32_System_ProcessStatus",
+    "Win32_System_Registry",
+    "Win32_System_SystemInformation",
+    "Win32_System_SystemServices",
+    "Win32_System_Threading",
+    "Win32_System_Time", # local/UTC conversion for to-do due dates
+    "Win32_System_Variant",
+    "Win32_System_Wmi",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+    "Win32_UI_Shell_PropertiesSystem",
+    "Win32_UI_WindowsAndMessaging",
+    "implement",
+]
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
