@@ -25,6 +25,7 @@ features = [
     "Devices_Radios",
     "Devices_WiFi",
     "Media_Control",
+    "Networking", # HostName (phone: the PC's LAN addresses)
     "Networking_Connectivity",
     "Networking_NetworkOperators",
     "Security_Credentials",

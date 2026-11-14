@@ -444,6 +444,11 @@ fn activity_panel(ui: &mut Ui, s: &State, snap: &Snapshot, r: Rect) {
     let t = ui.t;
     let (head, body) = r.take_top(22.0, 8.0);
     caps(ui, "ACTIVITY", snap.transfers.len(), head);
+    if snap.transfers.iter().any(|t| !t.active)
+        && ui.icon_button(Rect::new(head.right() - 22.0, head.y, 22.0, 22.0), "Trash", 12.0, t.subtext)
+    {
+        phone::clear_transfers();
+    }
     if snap.transfers.is_empty() {
         empty(ui, body, "ArrowsUpDown", "Nothing yet", &format!("Files from the phone land on the Shelf and in {}.", s.folder_short));
         return;
@@ -453,6 +458,7 @@ fn activity_panel(ui: &mut Ui, s: &State, snap: &Snapshot, r: Rect) {
     let heights: Vec<f32> = items.iter().map(|tr| base_h + if tr.active { 8.0 } else { 0.0 }).collect();
     let content: f32 = heights.iter().map(|h| h + 5.0).sum();
     let mut cancel = None;
+    let mut delete = None;
     let mut open = None;
     ui.scroll(id("phone.activity"), body, content, |ui, top| {
         let mut y = top;
@@ -465,7 +471,7 @@ fn activity_panel(ui: &mut Ui, s: &State, snap: &Snapshot, r: Rect) {
             let dir = if tr.incoming { "ArrowDown" } else { "ArrowUp" };
             let c = if tr.failed { Some(t.danger) } else { None };
             icon_tile(ui, row.x + 8.0 + 13.0, row.y + 8.0 + 13.0, dir, tr.incoming || tr.active, c);
-            let right_pad = if tr.active { 8.0 + 24.0 } else { 8.0 };
+            let right_pad = 8.0 + 24.0;
             let tx = Rect::new(row.x + 42.0, row.y + 8.0, row.w - 42.0 - right_pad, lh(11.5));
             ui.text(&tr.title, tx, 11.5, SEMIBOLD, t.text, Align::Left);
             let sub = if tr.state.is_empty() { tr.direction() } else { format!("{} · {}", tr.direction(), tr.state) };
@@ -480,6 +486,8 @@ fn activity_panel(ui: &mut Ui, s: &State, snap: &Snapshot, r: Rect) {
                 if ui.icon_button(Rect::new(row.right() - 8.0 - 20.0, row.y + 8.0, 20.0, 20.0), "XMark", 10.0, t.subtext) {
                     cancel = Some(tr.id);
                 }
+            } else if ui.icon_button(Rect::new(row.right() - 8.0 - 20.0, row.cy() - 10.0, 20.0, 20.0), "XMark", 10.0, t.subtext) {
+                delete = Some(tr.id);
             } else if clickable && ui.clicked(row) {
                 open = Some(tr.clone());
             }
@@ -487,6 +495,9 @@ fn activity_panel(ui: &mut Ui, s: &State, snap: &Snapshot, r: Rect) {
     });
     if let Some(id) = cancel {
         phone::cancel(id);
+    }
+    if let Some(id) = delete {
+        phone::remove_transfer(id);
     }
     if let Some(tr) = open {
         if let Some(text) = &tr.text {

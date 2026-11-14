@@ -16,6 +16,18 @@ pub fn open_settings_page(uri: &str) {
     open(uri);
 }
 
+/// Opens the app a notification came from: by its AppUserModelId, else by its Start menu name.
+/// Runs the shell lookup, so call it off the window thread.
+pub fn open_app(app_id: &str, name: &str) {
+    let parsing = if app_id.is_empty() { crate::services::appicons::find_app_by_name(name) } else { Some(app_id.to_string()) };
+    if let Some(p) = parsing {
+        let args = HSTRING::from(format!("shell:AppsFolder\\{p}"));
+        unsafe {
+            ShellExecuteW(None, &HSTRING::from("open"), &HSTRING::from("explorer.exe"), &args, PCWSTR::null(), SW_SHOWNORMAL);
+        }
+    }
+}
+
 /// Shows a file selected in Explorer.
 pub fn reveal(path: &str) {
     let args = HSTRING::from(format!("/select,\"{path}\""));

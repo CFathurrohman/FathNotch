@@ -295,9 +295,14 @@ fn stop(keep_status: bool) {
 }
 
 fn accept_loop(listener: TcpListener, gen: u64) {
+    let mut checked = std::time::Instant::now();
     loop {
         if with(|p| p.generation) != gen {
             return; // dropping the listener closes the port
+        }
+        if checked.elapsed() >= Duration::from_secs(3) {
+            checked = std::time::Instant::now();
+            refresh_address();
         }
         match listener.accept() {
             Ok((stream, addr)) => {
@@ -339,20 +344,56 @@ fn random_id() -> String {
 }
 
 /// The address a phone on the same Wi-Fi most likely reaches: the one the default route uses.
-/// (A UDP "connect" sends nothing; it only picks the outgoing interface.)
+/// (A UDP "connect" sends nothing; it only picks the outgoing interface.) Networks without internet, like a
+/// phone hotspot with mobile data off, may have no default route: then any LAN address the PC has.
 fn best_local_address() -> Option<std::net::Ipv4Addr> {
-    let s = UdpSocket::bind("0.0.0.0:0").ok()?;
-    for target in ["192.168.0.1:9", "10.0.0.1:9", "8.8.8.8:53"] {
-        if s.connect(target).is_ok() {
-            if let Ok(SocketAddr::V4(a)) = s.local_addr() {
-                let ip = *a.ip();
-                if !ip.is_unspecified() && !ip.is_loopback() && !ip.is_link_local() {
-                    return Some(ip);
+    let usable = |ip: &std::net::Ipv4Addr| !ip.is_unspecified() && !ip.is_loopback() && !ip.is_link_local();
+    if let Ok(s) = UdpSocket::bind("0.0.0.0:0") {
+        for target in ["192.168.0.1:9", "10.0.0.1:9", "8.8.8.8:53"] {
+            if s.connect(target).is_ok() {
+                if let Ok(SocketAddr::V4(a)) = s.local_addr() {
+                    if usable(a.ip()) {
+                        return Some(*a.ip());
+                    }
                 }
             }
         }
     }
-    None
+    lan_addresses().into_iter().find(|ip| usable(ip))
+}
+
+/// The PC's private IPv4 addresses on connected adapters.
+fn lan_addresses() -> Vec<std::net::Ipv4Addr> {
+    use windows::Networking::Connectivity::NetworkInformation;
+    use windows::Networking::HostNameType;
+    let Ok(names) = NetworkInformation::GetHostNames() else { return vec![] };
+    names
+        .into_iter()
+        .filter(|h| h.Type().is_ok_and(|t| t == HostNameType::Ipv4))
+        .filter_map(|h| h.CanonicalName().ok()?.to_string_lossy().parse::<std::net::Ipv4Addr>().ok())
+        .filter(|ip| ip.is_private())
+        .collect()
+}
+
+/// Follows the PC to another network (Wi-Fi → hotspot…) while Phone is on: the QR code and link change with it.
+fn refresh_address() {
+    let ip = best_local_address();
+    let changed = with(|p| {
+        if !p.running {
+            return false;
+        }
+        let port = settings::shared().phone_port;
+        let url = ip.map(|ip| format!("http://{ip}:{port}/?k={}", p.key));
+        if url == p.web_url {
+            return false;
+        }
+        p.web_url = url;
+        p.status = if p.web_url.is_none() { "Not connected to a network. Join the same Wi-Fi as your phone.".into() } else { String::new() };
+        true
+    });
+    if changed {
+        crate::bg::refresh();
+    }
 }
 
 // ---------------------------------------------------------------- PC side
@@ -483,6 +524,18 @@ pub fn clear_outbox() {
     }
 }
 
+/// Removes a finished transfer from Activity (the file it saved stays where it is).
+pub fn remove_transfer(id: u64) {
+    with(|p| p.transfers.retain(|t| t.active || t.id != id));
+    crate::bg::refresh();
+}
+
+/// Clears Activity, keeping transfers still running.
+pub fn clear_transfers() {
+    with(|p| p.transfers.retain(|t| t.active));
+    crate::bg::refresh();
+}
+
 pub fn cancel(id: u64) {
     with(|p| {
         if let Some(t) = p.transfers.iter().find(|t| t.id == id && t.active) {
@@ -544,7 +597,7 @@ fn track(title: String, peer: String, incoming: bool, total: u64, state: &str) -
 fn notify(key: &str, icon: &'static str, title: &str, sub: String) {
     crate::model::push_alert(crate::notch::Alert {
         key: format!("phone:{key}"),
-        kind: crate::notch::AlertKind::Full { icon, title: title.to_string(), sub, open: Some("phone") },
+        kind: crate::notch::AlertKind::Full { icon, title: title.to_string(), sub, open: Some("phone"), app: None },
         duration: std::time::Duration::from_millis(3200),
     });
 }

@@ -21,6 +21,8 @@ pub struct Notification {
     pub title: String,
     pub body: String,
     pub arrived: SystemTime,
+    /// For FathNotch's own alerts (phone, timers, prayer…): the icon drawn in the app tile ("" for apps).
+    pub icon: String,
 }
 
 const KEEP: usize = 50;
@@ -46,6 +48,8 @@ struct Saved {
     title: String,
     body: String,
     arrived: u64,
+    #[serde(default)]
+    icon: String,
 }
 
 fn load_saved() -> Vec<Notification> {
@@ -54,7 +58,7 @@ fn load_saved() -> Vec<Notification> {
     saved
         .into_iter()
         .filter(|s| now.saturating_sub(s.arrived) < KEEP_DAYS * 86_400)
-        .map(|s| Notification { id: s.id, app: s.app, app_id: s.app_id, title: s.title, body: s.body, arrived: UNIX_EPOCH + Duration::from_secs(s.arrived) })
+        .map(|s| Notification { id: s.id, app: s.app, app_id: s.app_id, title: s.title, body: s.body, arrived: UNIX_EPOCH + Duration::from_secs(s.arrived), icon: s.icon })
         .collect()
 }
 
@@ -68,6 +72,7 @@ fn save(history: &[Notification]) {
             title: n.title.clone(),
             body: n.body.clone(),
             arrived: n.arrived.duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
+            icon: n.icon.clone(),
         })
         .collect();
     crate::services::store::save(FILE, &saved);
@@ -83,6 +88,29 @@ pub fn remove(id: u32) {
     let mut s = lock();
     s.history.retain(|n| n.id != id);
     save(&s.history);
+}
+
+/// Ids for FathNotch's own entries live above Windows' (which count up from small numbers).
+const LOCAL_IDS: u32 = 0x8000_0000;
+
+/// Adds one of FathNotch's own alerts (phone transfer, timer, prayer, reminder…) to the history.
+pub fn add_local(source: &str, icon: &str, title: &str, body: &str) {
+    let mut s = lock();
+    let id = s.history.iter().map(|n| n.id).filter(|&i| i >= LOCAL_IDS).max().map_or(LOCAL_IDS, |i| i.wrapping_add(1).max(LOCAL_IDS));
+    let n = Notification {
+        id,
+        app: source.to_string(),
+        app_id: String::new(),
+        title: title.to_string(),
+        body: body.to_string(),
+        arrived: SystemTime::now(),
+        icon: icon.to_string(),
+    };
+    s.history.insert(0, n);
+    s.history.truncate(KEEP);
+    save(&s.history);
+    drop(s);
+    crate::bg::refresh();
 }
 
 fn lock() -> std::sync::MutexGuard<'static, State> {
@@ -231,7 +259,8 @@ fn read(n: &UserNotification, id: u32) -> Option<Notification> {
         .collect();
     let (title, body) = match texts.split_first() {
         Some((first, rest)) => (first.clone(), rest.join(" ")),
-        None => return None,
+        // Some apps (Edge site notifications) put their text where these elements don't reach.
+        None => ("New notification".to_string(), String::new()),
     };
     let arrived = n
         .CreationTime()
@@ -242,10 +271,32 @@ fn read(n: &UserNotification, id: u32) -> Option<Notification> {
             UNIX_EPOCH.checked_add(Duration::from_nanos(u64::try_from(since).ok()? * 100))
         })
         .unwrap_or_else(SystemTime::now);
-    if let Some(bytes) = logo(n) {
-        crate::services::appicons::remember_logo(&app_id, &app, bytes);
+    fetch_logo(id, &app_id, &app);
+    Some(Notification { id, app, app_id, title, body, arrived, icon: String::new() })
+}
+
+/// Loads the app's logo on its own thread, once per app: for some apps (WhatsApp) Windows never finishes
+/// opening it, and waiting on the watcher thread froze it so no notification got through.
+fn fetch_logo(id: u32, app_id: &str, app: &str) {
+    static TRIED: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    let key = format!("{app_id}|{app}");
+    if !TRIED.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner()).insert(key) {
+        return;
     }
-    Some(Notification { id, app, app_id, title, body, arrived })
+    let (app_id, app) = (app_id.to_string(), app.to_string());
+    std::thread::Builder::new()
+        .name("notification-logo".into())
+        .spawn(move || {
+            unsafe {
+                let _ = windows::Win32::System::Com::CoInitializeEx(None, windows::Win32::System::Com::COINIT_MULTITHREADED);
+            }
+            let n = UserNotificationListener::Current().and_then(|l| l.GetNotification(id));
+            if let Some(bytes) = n.ok().and_then(|n| logo(&n)) {
+                crate::services::appicons::remember_logo(&app_id, &app, bytes);
+                crate::bg::refresh();
+            }
+        })
+        .ok();
 }
 
 /// The app logo Windows shows with the toast (64 px), as image file bytes.

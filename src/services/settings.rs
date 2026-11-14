@@ -92,6 +92,9 @@ pub struct Settings {
     pub notify_muted_apps: Vec<String>,
     pub notify_seen_apps: Vec<String>,
     pub notify_keep_history: bool,
+    /// Control → Silent: notifications are collected in the Notifications tab but don't pop out, and
+    /// notification sounds are off.
+    pub silent_mode: bool,
 
     /// Idle closed notch: "clock", "date", "prayer", "weather", ...
     pub idle_items: Vec<String>,
@@ -227,6 +230,7 @@ impl Default for Settings {
             notify_muted_apps: vec![],
             notify_seen_apps: vec![],
             notify_keep_history: true,
+            silent_mode: false,
             idle_items: vec![s("clock")],
             idle_layout: s("Rotate"),
             idle_rotate_sec: 8,

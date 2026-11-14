@@ -48,7 +48,26 @@ pub fn clock_secs() -> f64 {
     START.get_or_init(Instant::now).elapsed().as_secs_f64()
 }
 
+/// Queues an alert for the notch. Notification-style alerts (`Full`) also land in the Notifications tab
+/// (Windows' own are recorded by the watcher), and while Silent is on they're only recorded, not shown.
 pub fn push_alert(a: Alert) {
+    if let AlertKind::Full { icon, title, sub, open, .. } = &a.kind {
+        if !a.key.starts_with("app:") {
+            let source = match open {
+                Some("phone") => "Phone",
+                Some("timer") => "Timers",
+                Some("prayer") => "Prayer",
+                Some("calendar") => "Calendar",
+                _ if a.key.starts_with("download:") => "Downloads",
+                _ => "FathNotch",
+            };
+            notifications::add_local(source, icon, title, sub);
+        }
+        if settings::shared().silent_mode {
+            bg::refresh();
+            return;
+        }
+    }
     model().alerts.push(a);
     bg::refresh();
 }
@@ -86,7 +105,7 @@ fn on_notification(n: notifications::Notification) {
     let secs = (4 + n.body.chars().count() as u64 / 60).min(8);
     push_alert(Alert {
         key: format!("app:{}:{}", n.app, n.id),
-        kind: AlertKind::Full { icon: "Bell", title: n.title.clone(), sub, open: Some("notifications") },
+        kind: AlertKind::Full { icon: "Bell", title: n.title.clone(), sub, open: Some("notifications"), app: Some((n.app_id.clone(), n.app.clone())) },
         duration: Duration::from_secs(secs),
     });
 }
@@ -141,7 +160,7 @@ fn minute_tick() {
             crate::services::sound::chime(&settings::shared().prayer_sound);
             push_alert(Alert {
                 key: "prayer".into(),
-                kind: AlertKind::Full { icon: "Moon", title: format!("Waktu {name}"), sub: format!("{at} · {}", prayer_city()), open: Some("prayer") },
+                kind: AlertKind::Full { icon: "Moon", title: format!("Waktu {name}"), sub: format!("{at} · {}", prayer_city()), open: Some("prayer"), app: None },
                 duration: Duration::from_secs(10),
             });
         }
@@ -155,7 +174,7 @@ pub fn poll_timers() {
         crate::services::sound::play(if msg == "Timer finished" { &s.timer_sound } else { &s.pomodoro_sound });
         push_alert(Alert {
             key: "timer".into(),
-            kind: AlertKind::Full { icon: "Clock", title: msg, sub: "Timers".into(), open: Some("timer") },
+            kind: AlertKind::Full { icon: "Clock", title: msg, sub: "Timers".into(), open: Some("timer"), app: None },
             duration: Duration::from_secs(6),
         });
     }
@@ -340,7 +359,8 @@ fn build_idle_items() -> Vec<IdleItem> {
             }),
             "weather" => {
                 if let Some(w) = weather_now() {
-                    out.push(IdleItem { id: "weather", icon: weather_icon(w.code, w.is_day), value: weather::degrees(w.temp), accent: false });
+                    // Always the cloud: the idle pill marks the temperature, not the sky.
+                    out.push(IdleItem { id: "weather", icon: "Cloud", value: weather::degrees(w.temp), accent: false });
                 }
             }
             "prayer" => {

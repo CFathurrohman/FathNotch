@@ -601,9 +601,14 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                         (n.has_alert() && n.alert_dismiss_hit(x, y), n.alert_open_target())
                     })
                     .unwrap_or((false, None));
+                    // Another app's notification (WhatsApp…): a click opens that app.
+                    let app = if dismiss { None } else { with(|n| n.alert_app()).flatten() };
                     with(|n| {
                         if dismiss {
                             n.end_alert();
+                        } else if let Some((id, name)) = app {
+                            n.end_alert();
+                            bg::spawn(move || shell::open_app(&id, &name));
                         } else {
                             if n.has_alert() {
                                 n.end_alert();

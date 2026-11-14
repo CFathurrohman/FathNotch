@@ -193,7 +193,7 @@ unsafe fn read_apps_folder() -> Option<Vec<(String, String)>> {
 
 /// The AppsFolder parsing name for a display name: an exact (case-insensitive) match, else the shortest
 /// entry that starts with it ("Outlook" → "Outlook (new)").
-fn find_app_by_name(name: &str) -> Option<String> {
+pub fn find_app_by_name(name: &str) -> Option<String> {
     let n = name.trim().to_lowercase();
     if n.is_empty() {
         return None;

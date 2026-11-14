@@ -58,7 +58,8 @@ pub enum AlertKind {
     /// A glyph and a bar (volume, brightness).
     Level { icon: &'static str, level: f32 },
     /// Icon tile, title, body (notifications, reminders, prayer).
-    Full { icon: &'static str, title: String, sub: String, open: Option<&'static str> },
+    /// `app` (AppUserModelId, display name) marks another app's notification: its icon replaces `icon`.
+    Full { icon: &'static str, title: String, sub: String, open: Option<&'static str>, app: Option<(String, String)> },
 }
 
 #[derive(Clone)]
@@ -457,6 +458,14 @@ impl Notch {
         self.alert_mix.target = 0.0;
         if !self.expanded {
             self.resize_closed();
+        }
+    }
+
+    /// The app behind the alert on screen (another app's notification): (AppUserModelId, name).
+    pub fn alert_app(&self) -> Option<(String, String)> {
+        match &self.alert {
+            Some(Alert { kind: AlertKind::Full { app, .. }, .. }) => app.clone(),
+            _ => None,
         }
     }
 
@@ -869,10 +878,21 @@ impl Notch {
                     g.text(&sub, 12.0, REGULAR, Rect::new(sx, o.y, (o.x + o.w - 16.0 - sx).max(0.0), o.h).d2d(), Align::Left, with_alpha(t.subtext, a));
                 }
             }
-            AlertKind::Full { icon, title, sub, .. } => {
+            AlertKind::Full { icon, title, sub, app, .. } => {
                 let tile = Rect::new(o.x + 18.0, cy - 20.0, 40.0, 40.0);
                 g.fill_round(tile.d2d(), 11.0, with_alpha(t.surface2, a));
-                g.icon(icon, tile.x + 10.0, tile.y + 10.0, 20.0, with_alpha(t.text, a));
+                // Another app's notification shows that app's icon (WhatsApp, Edge…) so it's clear who it's from;
+                // until the icon has loaded (or when none is found) the bell stands in.
+                let px = (28.0 * g.scale).round() as u32;
+                let drawn = app.as_ref().and_then(|(id, name)| crate::services::appicons::app(id, name, px)).is_some_and(|(k, png)| {
+                    g.load_image(k, &png) && {
+                        g.image(k, Rect::new(tile.x + 6.0, tile.y + 6.0, 28.0, 28.0).d2d(), 0.0, a);
+                        true
+                    }
+                });
+                if !drawn {
+                    g.icon(icon, tile.x + 10.0, tile.y + 10.0, 20.0, with_alpha(t.text, a));
+                }
                 let x = tile.right() + 13.0;
                 let w = o.x + o.w - x - 50.0;
                 g.text(&title, 15.0, SEMIBOLD, Rect::new(x, cy - 20.0, w, 20.0).d2d(), Align::Left, with_alpha(t.text, a));

@@ -72,7 +72,7 @@ fn refresh(data: &Arc<Mutex<Data>>, displays: bool) {
             wifi_name: radios::connected_name(),
             bt: radios::bluetooth(),
             hotspot: radios::hotspot(),
-            silent: radios::silent(),
+            silent: crate::services::settings::shared().silent_mode,
             outputs: audio::devices(false),
             inputs: audio::devices(true),
             out_level: audio::master(false),
@@ -242,13 +242,15 @@ fn draw_tiles(ui: &mut Ui, s: &mut State, d: &Data, r: Rect) {
         cols[3].0,
         if d.silent { "SpeakerMuted" } else { "Bell" },
         "Silent",
-        if d.silent { "Sounds off" } else { "Off" },
+        if d.silent { "No pop-ups" } else { "Off" },
         d.silent,
         true,
     );
     if tog {
+        // Silent hides notification pop-ups (they still collect in Notifications) and mutes their sounds.
         let on = !d.silent;
         set_local(s, |x| x.silent = on);
+        crate::services::settings::update(|x| x.silent_mode = on);
         bg::spawn(move || radios::set_silent(on));
     }
     if open {

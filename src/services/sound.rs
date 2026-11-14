@@ -31,9 +31,9 @@ pub fn play(name: &str) {
 }
 
 /// Reminder and prayer chimes: like `play`, but quiet while Windows notification sounds are off
-/// (the Control tab's Silent tile), as the C# app did.
+/// or the Control tab's Silent tile is on.
 pub fn chime(name: &str) {
-    if !radios::silent() {
+    if !radios::silent() && !crate::services::settings::shared().silent_mode {
         play(name);
     }
 }

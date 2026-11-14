@@ -67,7 +67,8 @@ pub fn draw(ui: &mut Ui, s: &mut State, r: Rect, _go: &mut Option<&'static str>)
     let offset = local_offset();
     enum Item<'a> {
         Day(String),
-        Card(&'a Notification, f32, usize),
+        /// Card, height, body lines shown, whether the body is longer than the collapsed card shows.
+        Card(&'a Notification, f32, usize, bool),
     }
     let mut layout: Vec<(f32, Item)> = Vec::new();
     let mut y = 0.0;
@@ -82,14 +83,14 @@ pub fn draw(ui: &mut Ui, s: &mut State, r: Rect, _go: &mut Option<&'static str>)
             y += 20.0;
             day = Some(d);
         }
-        let lines = if n.body.trim().is_empty() {
+        let est = if n.body.trim().is_empty() {
             0
         } else {
-            let est = (ui.measure(n.body.trim(), 12.5, REGULAR) / text_w.max(1.0)).ceil().max(1.0) as usize;
-            if s.expanded.contains(&n.id) { est } else { est.min(COLLAPSED_LINES) }
+            (ui.measure(n.body.trim(), 12.5, REGULAR) / text_w.max(1.0)).ceil().max(1.0) as usize
         };
+        let lines = if s.expanded.contains(&n.id) { est } else { est.min(COLLAPSED_LINES) };
         let h = 9.0 + 15.0 + 2.0 + 18.0 + if lines > 0 { 2.0 + lines as f32 * BODY_LINE } else { 0.0 } + 10.0;
-        layout.push((y, Item::Card(n, h, lines)));
+        layout.push((y, Item::Card(n, h, lines, est > COLLAPSED_LINES)));
         y += h + 6.0;
     }
 
@@ -103,7 +104,7 @@ pub fn draw(ui: &mut Ui, s: &mut State, r: Rect, _go: &mut Option<&'static str>)
                     let r = Rect::new(body.x + 2.0, top + y, 300.0, 16.0);
                     ui.text(label, r, 11.0, SEMIBOLD, t.subtext, Align::Left);
                 }
-                Item::Card(n, h, lines) => {
+                Item::Card(n, h, lines, long) => {
                     let card = Rect::new(body.x, top + y, width, *h);
                     if card.bottom() < body.y || card.y > body.bottom() {
                         continue;
@@ -113,7 +114,12 @@ pub fn draw(ui: &mut Ui, s: &mut State, r: Rect, _go: &mut Option<&'static str>)
                     let inner = card.pad(12.0, 9.0, 12.0, 10.0);
                     // App tile: its icon, else the first letter.
                     let tile = Rect::new(inner.x, inner.y + 1.0, 30.0, 30.0);
-                    app_tile(ui, &n.app_id, &n.app, tile, 8.0, 24.0, 13.0);
+                    if n.icon.is_empty() {
+                        app_tile(ui, &n.app_id, &n.app, tile, 8.0, 24.0, 13.0);
+                    } else {
+                        ui.fill(tile, 8.0, t.accent);
+                        ui.icon(own_icon(&n.icon), tile.cx(), tile.cy(), 14.0, t.on_accent);
+                    }
                     let x = tile.right() + 11.0;
                     let w = inner.right() - x;
                     let meta = format!("{} · {}", n.app, age(n.arrived, offset));
@@ -130,9 +136,24 @@ pub fn draw(ui: &mut Ui, s: &mut State, r: Rect, _go: &mut Option<&'static str>)
                         if ui.icon_button(del, "XMark", 10.0, t.subtext) {
                             delete = Some(n.id);
                         }
+                        // A long message: the chevron shows it in full (or folds it back).
+                        if *long {
+                            let more = Rect::new(del.x - 24.0, del.y, 22.0, 22.0);
+                            let open = s.expanded.contains(&n.id);
+                            if ui.icon_button(more, if open { "ChevronUp" } else { "ChevronDown" }, 11.0, t.subtext) {
+                                toggle = Some(n.id);
+                            }
+                        }
                     }
-                    if !n.body.trim().is_empty() && ui.clicked(card) {
-                        toggle = Some(n.id);
+                    // Clicking the card opens the app it came from (WhatsApp…); FathNotch's own entries
+                    // (and long ones without an app) unfold instead.
+                    if ui.clicked(card) {
+                        if n.icon.is_empty() {
+                            let (id, name) = (n.app_id.clone(), n.app.clone());
+                            crate::bg::spawn(move || crate::shell::open_app(&id, &name));
+                        } else if *long {
+                            toggle = Some(n.id);
+                        }
                     }
                 }
             }
@@ -173,6 +194,12 @@ fn empty(ui: &mut Ui, r: Rect) {
             crate::shell::open_settings_page("ms-settings:privacy-notifications");
         }
     }
+}
+
+/// The icon a FathNotch alert was raised with (the names `push_alert` callers use).
+fn own_icon(name: &str) -> &'static str {
+    const KNOWN: &[&str] = &["ArrowDown", "ArrowUp", "Clock", "Moon", "CalendarDays", "Bell", "Bolt", "DevicePhone"];
+    KNOWN.iter().copied().find(|k| *k == name).unwrap_or("Bell")
 }
 
 /// A rounded tile with the app's icon (`icon` px, centred), or its first letter until / unless one is found.
@@ -271,7 +298,7 @@ fn age(at: SystemTime, offset: i64) -> String {
 /// Sample cards for screenshots (FATHNOTCH_DEMO_NOTIFS=1, only while the real history is empty).
 fn demo() -> Vec<Notification> {
     let at = |mins: u64| SystemTime::now() - Duration::from_secs(mins * 60);
-    let n = |id, app: &str, title: &str, body: &str, mins| Notification { id, app: app.into(), app_id: String::new(), title: title.into(), body: body.into(), arrived: at(mins) };
+    let n = |id, app: &str, title: &str, body: &str, mins| Notification { id, app: app.into(), app_id: String::new(), title: title.into(), body: body.into(), arrived: at(mins), icon: String::new() };
     vec![
         n(1, "WhatsApp", "Aulia UM", "btw, did you see the Microsoft thing? · 2 unread messages", 40),
         n(2, "WhatsApp", "Aulia UM", "On my way, see you in ten minutes · 3 unread messages", 49),

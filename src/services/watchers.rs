@@ -263,7 +263,7 @@ fn downloads() {
                         let file = name.rsplit('\\').next().unwrap_or(&name).to_string();
                         push_alert(Alert {
                             key: format!("download:{name}"),
-                            kind: AlertKind::Full { icon: "ArrowDown", title: "Download finished".into(), sub: file, open: None },
+                            kind: AlertKind::Full { icon: "ArrowDown", title: "Download finished".into(), sub: file, open: None, app: None },
                             duration: Duration::from_secs(4),
                         });
                     }
@@ -584,7 +584,7 @@ fn poll_reminders(st: &mut Polled, s: &settings::Settings) {
         };
         push_alert(Alert {
             key: format!("reminder:{key}"),
-            kind: AlertKind::Full { icon: "CalendarDays", title, sub, open: Some("calendar") },
+            kind: AlertKind::Full { icon: "CalendarDays", title, sub, open: Some("calendar"), app: None },
             duration: Duration::from_secs(5),
         });
         if !chimed {
