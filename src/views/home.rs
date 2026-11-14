@@ -28,6 +28,8 @@ pub struct State {
     /// Blurred-art backdrop baked for (art id, surface colour, card size): BMP bytes, made off the UI thread.
     backdrop: Arc<Mutex<Option<(u64, Vec<u8>)>>>,
     backdrop_for: u64,
+    /// Dragging the song's progress bar: where it's held (0..1). The seek happens on release.
+    scrub: Option<f32>,
 }
 
 pub fn shown(s: &mut State) {
@@ -323,16 +325,49 @@ fn now_playing_card(ui: &mut Ui, s: &mut State, r: Rect, go: &mut Option<&'stati
 
     // Controls row (40) at the bottom; progress + times (4 + 3 + 13 + 4) above it.
     let row_y = inner.bottom() - 40.0;
+    // Seekable: press anywhere on the bar (a taller hit area) and drag; the song jumps there on release.
     let bar = Rect::new(x, row_y - 24.0, w, 4.0);
-    let (pos, dur) = np.as_ref().map_or((0.0, 0.0), |p| (p.position_now(), p.duration));
-    let frac = if dur > 0.0 { (pos / dur) as f32 } else { 0.0 };
-    ui.fill(bar, 2.0, t.track);
+    let (mut pos, dur) = np.as_ref().map_or((0.0, 0.0), |p| (p.position_now(), p.duration));
+    let hit = Rect::new(bar.x - 6.0, bar.y - 8.0, bar.w + 12.0, bar.h + 16.0);
+    let at = |ui: &Ui| ((ui.mouse().0 - bar.x) / bar.w).clamp(0.0, 1.0);
+    if dur <= 0.0 {
+        s.scrub = None;
+    } else if s.scrub.is_none() && ui.clicked(hit) {
+        s.scrub = Some(at(ui));
+    }
+    if let Some(held) = s.scrub {
+        if ui.input.down {
+            let now = at(ui);
+            s.scrub = Some(now);
+            ui.input.consumed = true;
+            ui.animate = true;
+        } else {
+            let target = held as f64 * dur;
+            crate::bg::spawn(move || media::seek(target));
+            s.scrub = None;
+            pos = target;
+        }
+    }
+    if let Some(held) = s.scrub {
+        pos = held as f64 * dur;
+    }
+    let frac = if dur > 0.0 { ((pos / dur) as f32).clamp(0.0, 1.0) } else { 0.0 };
+    let active = s.scrub.is_some() || (dur > 0.0 && ui.hovered(hit));
+    let bar = if active { Rect::new(bar.x, bar.y - 1.0, bar.w, 6.0) } else { bar };
+    ui.fill(bar, bar.h / 2.0, t.track);
     if frac > 0.0 {
-        ui.fill(Rect::new(bar.x, bar.y, (bar.w * frac.clamp(0.0, 1.0)).max(4.0), bar.h), 2.0, t.accent);
+        ui.fill(Rect::new(bar.x, bar.y, (bar.w * frac).max(bar.h), bar.h), bar.h / 2.0, t.accent);
+    }
+    if active {
+        let kx = bar.x + bar.w * frac;
+        ui.g.fill_circle(kx, bar.cy(), if s.scrub.is_some() { 7.0 } else { 6.0 }, ui.c(t.accent));
+        ui.g.fill_circle(kx, bar.cy(), 2.5, ui.c(t.on_accent));
+        ui.animate = true;
     }
     {
-        ui.text(&crate::views::nowplaying::fmt(pos), Rect::new(x, bar.bottom() + 3.0, 60.0, 14.0), 11.0, REGULAR, t.subtext, Align::Left);
-        ui.text(&crate::views::nowplaying::fmt(dur), Rect::new(bar.right() - 60.0, bar.bottom() + 3.0, 60.0, 14.0), 11.0, REGULAR, t.subtext, Align::Right);
+        let ty = row_y - 20.0 + 3.0; // under the resting bar, so the times don't move while it's held
+        ui.text(&crate::views::nowplaying::fmt(pos), Rect::new(x, ty, 60.0, 14.0), 11.0, REGULAR, t.subtext, Align::Left);
+        ui.text(&crate::views::nowplaying::fmt(dur), Rect::new(x + w - 60.0, ty, 60.0, 14.0), 11.0, REGULAR, t.subtext, Align::Right);
     }
     if np.as_ref().is_some_and(|p| p.playing) {
         ui.animate = true;
