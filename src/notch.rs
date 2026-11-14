@@ -100,6 +100,8 @@ pub struct Notch {
     idle_index: usize,
     /// Idle cat eyes: when the current look started.
     eyes: Option<Instant>,
+    /// Which eye animation is playing (the next peek plays the next one).
+    eyes_kind: u8,
     /// Set by a frame: the window should take keyboard focus.
     pub wants_keyboard: bool,
     /// Screenshot mode: frames go to this PNG instead of the screen.
@@ -125,45 +127,225 @@ fn ease_out(t: f32) -> f32 {
     1.0 - (1.0 - t).powi(3)
 }
 
-const EYES_SECS: f32 = 3.2;
+const EYES_SECS: f32 = 3.6;
 
 /// Closed-notch text size for its height (as the C# app: 40 % of the height, 11–14, in half points).
 fn idle_font(h: f32) -> f32 {
     ((h * 0.4).clamp(11.0, 14.0) * 2.0).round() / 2.0
 }
 
-/// Two round cat eyes (no highlights): they open, glance left and right, blink, and close.
-fn draw_eyes(g: &Gfx, r: &Rect, el: f32, a: f32, t: &Theme) {
-    let k = EYES_SECS;
-    // Fade in/out over the first/last 0.35 s.
-    let fade = clamp01(el / 0.35).min(clamp01((k - el) / 0.35));
-    // Blink around 1.6 s: the lids close and reopen.
-    let blink = 1.0 - (1.0 - ((el - 1.6) / 0.12).abs()).max(0.0);
-    let open = (fade * blink).max(0.08);
-    // Glance: centre → left → right → centre.
-    let look = if el < 0.6 {
+/// How many different eye animations there are; each peek plays the next one.
+pub const EYE_KINDS: u8 = 4;
+
+/// One moment of the cat's face.
+struct Face {
+    /// Lid opening per eye (0 shut … 1 open).
+    open: [f32; 2],
+    /// Shut eyes drawn as arcs: 1 = happy "^", -1 = sleeping "‿", 0 = not shut.
+    arc: [f32; 2],
+    /// Where the pupils look (−1 … 1 each way).
+    look: (f32, f32),
+    /// Pupil width as a share of the eye size.
+    pupil: f32,
+}
+
+fn ease01(x: f32) -> f32 {
+    let x = clamp01(x);
+    x * x * (3.0 - 2.0 * x)
+}
+
+/// A value that ramps 0 → 1 between `a` and `b`.
+fn ramp(el: f32, a: f32, b: f32) -> f32 {
+    ease01((el - a) / (b - a))
+}
+
+/// A blink: 1 open, dipping to 0 between `a` and `b` (shut for the middle `hold`).
+fn blink(el: f32, a: f32, b: f32, hold: f32) -> f32 {
+    let mid = (a + b) / 2.0;
+    let half = ((b - a) - hold) / 2.0;
+    if el < a || el > b {
+        1.0
+    } else if el < mid - hold / 2.0 {
+        1.0 - ramp(el, a, a + half)
+    } else if el < mid + hold / 2.0 {
         0.0
-    } else if el < 1.3 {
-        -((el - 0.6) / 0.7).min(1.0)
-    } else if el < 2.4 {
-        -1.0 + 2.0 * ((el - 1.3) / 0.5).min(1.0)
     } else {
-        1.0 - ((el - 2.4) / 0.5).min(1.0)
-    };
-    let cy = r.cy();
-    let size = (r.h * 0.26).clamp(7.0, 11.0);
-    for dx in [-size * 1.9, size * 1.9] {
-        let cx = r.cx() + dx;
-        let h = size * open;
-        let lid = D2D1_ELLIPSE { point: crate::gfx::pt(cx, cy), radiusX: size, radiusY: h };
-        g.fill_ellipse(lid, with_alpha(t.text, a * fade));
-        if open > 0.4 {
-            g.fill_ellipse(
-                D2D1_ELLIPSE { point: crate::gfx::pt(cx + look * size * 0.38, cy + 0.5), radiusX: size * 0.5, radiusY: (size * 0.62).min(h * 0.9) },
-                with_alpha(t.pill, a * fade),
-            );
+        ramp(el, b - half, b)
+    }
+}
+
+/// The cat's face at `el` seconds into animation `kind`.
+fn face(kind: u8, el: f32) -> Face {
+    let k = EYES_SECS;
+    // Every animation opens over the first 0.4 s and closes over the last 0.4 s.
+    let lids = ease01(el / 0.4).min(ease01((k - el) / 0.4));
+    match kind % EYE_KINDS {
+        // Sleepy: half-closed eyes, two slow blinks, then dozing off with closed "‿ ‿" eyes.
+        1 => {
+            let o = lids * 0.5 * blink(el, 1.0, 1.7, 0.2) * blink(el, 2.0, 2.6, 0.15);
+            let doze = (2.75..k - 0.15).contains(&el);
+            Face {
+                open: [if doze { 0.0 } else { o }; 2],
+                arc: [if doze { -1.0 } else { 0.0 }; 2],
+                look: (0.0, 0.35),
+                pupil: 0.5,
+            }
+        }
+        // Wink: looks at you, winks the right eye, then a happy blink.
+        2 => {
+            let wink = (1.25..1.85).contains(&el);
+            let happy = (2.5..2.95).contains(&el);
+            Face {
+                open: [if happy { 0.0 } else { lids }, if wink || happy { 0.0 } else { lids * blink(el, 1.1, 2.0, 0.6) }],
+                arc: [if happy { 1.0 } else { 0.0 }, if wink || happy { 1.0 } else { 0.0 }],
+                look: (0.0, 0.0),
+                pupil: 0.5 - 0.1 * ramp(el, 0.4, 1.0),
+            }
+        }
+        // Curious: wide eyes look up, dart left and right, then a quick double blink.
+        3 => {
+            let up = ramp(el, 0.5, 0.8) * (1.0 - ramp(el, 2.2, 2.5));
+            let dart = if el < 1.1 {
+                0.0
+            } else if el < 1.3 {
+                -ramp(el, 1.1, 1.3)
+            } else if el < 1.6 {
+                -1.0 + 2.0 * ramp(el, 1.4, 1.6)
+            } else if el < 1.9 {
+                1.0 - 2.0 * ramp(el, 1.75, 1.9)
+            } else {
+                -1.0 + ramp(el, 2.0, 2.2)
+            };
+            let o = lids * blink(el, 2.55, 2.75, 0.03) * blink(el, 2.85, 3.05, 0.03);
+            Face { open: [o; 2], arc: [0.0; 2], look: (dart, -0.5 * up), pupil: 0.62 }
+        }
+        // Look around: glance left and right, then a slow "^ ^" cat blink (how cats blink at someone they like).
+        _ => {
+            let smiling = (2.12..2.68).contains(&el);
+            let o = lids * blink(el, 2.0, 2.9, 0.4);
+            let look = if el < 0.9 {
+                0.0
+            } else if el < 1.45 {
+                -ramp(el, 0.9, 1.2)
+            } else if el < 1.95 {
+                -1.0 + 2.0 * ramp(el, 1.45, 1.75)
+            } else {
+                1.0 - ramp(el, 1.95, 2.2)
+            };
+            let pupil = if el < 2.6 { 0.58 - 0.2 * ramp(el, 0.4, 1.0) } else { 0.38 + 0.16 * ramp(el, 2.6, 3.0) };
+            Face {
+                open: [if smiling { 0.0 } else { o }; 2],
+                arc: [if smiling { 1.0 } else { 0.0 }; 2],
+                look: (look, 0.0),
+                pupil,
+            }
         }
     }
+}
+
+/// A cute white cat face: round-ish, gently slanted eyes with big dark pupils (no highlights).
+/// `kind` picks one of the `EYE_KINDS` animations.
+fn draw_eyes(g: &Gfx, r: &Rect, el: f32, a: f32, t: &Theme, kind: u8) {
+    let k = EYES_SECS;
+    let f = face(kind, el);
+    let fade = clamp01(el / 0.2).min(clamp01((k - el) / 0.2));
+    let cy = r.cy();
+    let size = (r.h * 0.26).clamp(7.0, 11.0);
+    // White on the black pill (the scheme's text colour, so light schemes stay readable).
+    let white = with_alpha(t.text, a * fade);
+    let dark = with_alpha(t.pill, a * fade);
+    let p = crate::gfx::pt;
+    let w = size * 1.1; // half width of an eye
+    for (i, side) in [-1.0f32, 1.0].into_iter().enumerate() {
+        let cx = r.cx() + side * size * 2.0;
+        if f.arc[i] != 0.0 {
+            // Shut: "^" (happy) or "‿" (asleep).
+            let up = f.arc[i] > 0.0;
+            let (ey, cy2) = if up { (cy + size * 0.3, cy - size * 0.7) } else { (cy - size * 0.1, cy + size * 0.8) };
+            if let Some(geo) = g.path(|sink| unsafe {
+                use windows::Win32::Graphics::Direct2D::Common::{D2D1_BEZIER_SEGMENT, D2D1_FIGURE_BEGIN_HOLLOW, D2D1_FIGURE_END_OPEN};
+                sink.BeginFigure(p(cx - w * 0.85, ey), D2D1_FIGURE_BEGIN_HOLLOW);
+                sink.AddBezier(&D2D1_BEZIER_SEGMENT { point1: p(cx - w * 0.45, cy2), point2: p(cx + w * 0.45, cy2), point3: p(cx + w * 0.85, ey) });
+                sink.EndFigure(D2D1_FIGURE_END_OPEN);
+            }) {
+                g.stroke_geometry(&geo.into(), white, size * 0.32);
+            }
+            continue;
+        }
+
+        let open = f.open[i].max(0.06);
+        let h = size * 0.95 * open; // half height: nearly round when open
+        // A gentle slant: outer corner a little higher than the inner one.
+        let inner = (cx - side * w, cy + size * 0.04);
+        let outer = (cx + side * w, cy - size * 0.14 * open.max(0.3));
+        if let Some(geo) = g.path(|sink| unsafe {
+            use windows::Win32::Graphics::Direct2D::Common::{D2D1_BEZIER_SEGMENT, D2D1_FIGURE_BEGIN_FILLED, D2D1_FIGURE_END_CLOSED};
+            sink.BeginFigure(p(inner.0, inner.1), D2D1_FIGURE_BEGIN_FILLED);
+            sink.AddBezier(&D2D1_BEZIER_SEGMENT { point1: p(inner.0, cy - h * 1.3), point2: p(outer.0, outer.1 - h * 1.25), point3: p(outer.0, outer.1) });
+            sink.AddBezier(&D2D1_BEZIER_SEGMENT { point1: p(outer.0, cy + h * 1.3), point2: p(inner.0, cy + h * 1.3), point3: p(inner.0, inner.1) });
+            sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+        }) {
+            g.fill_geometry(&geo.into(), white);
+        }
+        // Pupil, kept inside the eye.
+        if open > 0.3 {
+            let ox = f.look.0 * w * 0.3;
+            let room = h * (1.0 - (ox / w).powi(2)).max(0.0).sqrt();
+            let ry = (h * 0.8).min(room * 0.9);
+            let py = cy - size * 0.02 + f.look.1 * (h - ry).max(0.0);
+            let rx = (size * f.pupil).min(ry);
+            g.fill_ellipse(D2D1_ELLIPSE { point: p(cx + ox, py), radiusX: rx, radiusY: ry }, dark);
+        }
+    }
+}
+
+/// Switching tabs from the keyboard. Ctrl+←/→ and Ctrl+1…9 always work, even while typing; plain ←/→ and
+/// 1…9 work while no text field has focus (in a note or a search box they keep typing). The keys used here
+/// are taken out of the frame's input so the tool never sees them.
+fn keyboard_tab(ui: &mut Ui, tool: &'static str, s: &settings::Settings) -> Option<&'static str> {
+    use crate::ui::Key;
+    if tool == "settings" || ui.st.dropdown != 0 {
+        return None;
+    }
+    let order = tools::ordered(&s.tool_order, &s.hidden_tools);
+    if order.is_empty() {
+        return None;
+    }
+    let typing = ui.st.focus != 0;
+    let cur = order.iter().position(|t| t.id == tool).unwrap_or(0) as i32;
+    let n = order.len() as i32;
+    // A number jumps to that tab (past the last one: the last); arrows step and wrap around.
+    let mut jump: Option<i32> = None;
+    let mut step = 0;
+    let mut keep = Vec::new();
+    for k in std::mem::take(&mut ui.input.keys) {
+        match k {
+            Key::TabPrev => step -= 1,
+            Key::TabNext => step += 1,
+            Key::TabAt(i) => jump = Some(i as i32 - 1),
+            Key::Left if !typing => step -= 1,
+            Key::Right if !typing => step += 1,
+            other => keep.push(other),
+        }
+    }
+    ui.input.keys = keep;
+    if !typing && ui.input.chars.chars().any(|c| ('1'..='9').contains(&c)) {
+        let mut rest = String::new();
+        for c in std::mem::take(&mut ui.input.chars).chars() {
+            match c.to_digit(10) {
+                Some(d @ 1..=9) => jump = Some(d as i32 - 1),
+                _ => rest.push(c),
+            }
+        }
+        ui.input.chars = rest;
+    }
+    let i = match jump {
+        Some(j) => j.min(n - 1),
+        None if step != 0 => (cur + step).rem_euclid(n),
+        None => return None,
+    };
+    let id = order[i as usize].id;
+    (id != tool).then_some(id)
 }
 
 pub struct Now {
@@ -248,6 +430,7 @@ impl Notch {
             last_frame: None,
             idle_index: 0,
             eyes: None,
+            eyes_kind: 0,
             wants_keyboard: false,
             shot: None,
             concealed: false,
@@ -535,6 +718,11 @@ impl Notch {
         if self.concealed && !s.eyes_when_hidden {
             return;
         }
+        // Take turns through the animations (dev: FATHNOTCH_EYES_KIND picks one).
+        self.eyes_kind = match std::env::var("FATHNOTCH_EYES_KIND").ok().and_then(|v| v.parse().ok()) {
+            Some(k) => k,
+            None => (self.eyes_kind + 1) % EYE_KINDS,
+        };
         self.eyes = Some(Instant::now());
         self.busy = true;
     }
@@ -785,7 +973,7 @@ impl Notch {
                 if let Some(start) = self.eyes {
                     let el = start.elapsed().as_secs_f32();
                     if el < EYES_SECS {
-                        draw_eyes(g, &r, el, a, t);
+                        draw_eyes(g, &r, el, a, t, self.eyes_kind);
                         self.busy = true;
                         return;
                     }
@@ -895,8 +1083,8 @@ impl Notch {
                 }
                 let x = tile.right() + 13.0;
                 let w = o.x + o.w - x - 50.0;
-                g.text(&title, 15.0, SEMIBOLD, Rect::new(x, cy - 20.0, w, 20.0).d2d(), Align::Left, with_alpha(t.text, a));
-                g.text(&sub, 12.5, REGULAR, Rect::new(x, cy + 1.0, w, 18.0).d2d(), Align::Left, with_alpha(t.subtext, a));
+                g.text(&title, 14.0, SEMIBOLD, Rect::new(x, cy - 20.0, w, 20.0).d2d(), Align::Left, with_alpha(t.text, a));
+                g.text(&sub, 12.0, REGULAR, Rect::new(x, cy + 1.0, w, 18.0).d2d(), Align::Left, with_alpha(t.subtext, a));
                 let d = Rect::new(o.x + o.w - 42.0, cy - 14.0, 28.0, 28.0);
                 g.fill_round(d.d2d(), 8.0, with_alpha(t.surface2, a));
                 g.icon("XMark", d.x + 8.5, d.y + 8.5, 11.0, with_alpha(t.subtext, a));
@@ -942,18 +1130,18 @@ impl Notch {
         if self.tool == "settings" {
             let back = Rect::new(head.x - 6.0, head.cy() - 15.0, 30.0, 30.0);
             back_clicked = ui.icon_button(back, "ChevronLeft", 14.0, t.text);
-            ui.text(tool.title, Rect::new(head.x + 28.0, head.y, 260.0, head.h), 19.0, SEMIBOLD, t.text, Align::Left);
+            ui.text(tool.title, Rect::new(head.x + 28.0, head.y, 260.0, head.h), 17.0, SEMIBOLD, t.text, Align::Left);
         } else {
-            ui.text(tool.title, Rect::new(head.x, head.y, 260.0, head.h), 19.0, SEMIBOLD, t.text, Align::Left);
+            ui.text(tool.title, Rect::new(head.x, head.y, 260.0, head.h), 17.0, SEMIBOLD, t.text, Align::Left);
         }
         if s_.header_clock {
             let date = format!("{} {} {} {}", &DAYS[now.dow][..3], now.day, &MONTHS[now.month - 1][..3], now.year);
             let time = format!("{:02}:{:02}", now.hour, now.minute);
-            let dw = ui.measure(&date, 15.0, REGULAR);
-            let tw = ui.measure(&time, 15.0, BOLD);
+            let dw = ui.measure(&date, 14.0, REGULAR);
+            let tw = ui.measure(&time, 14.0, BOLD);
             let x0 = head.cx() - (dw + 12.0 + tw) / 2.0;
-            ui.text(&date, Rect::new(x0, head.y, dw + 2.0, head.h), 15.0, REGULAR, t.subtext, Align::Left);
-            ui.text(&time, Rect::new(x0 + dw + 12.0, head.y, tw + 2.0, head.h), 15.0, BOLD, t.text, Align::Left);
+            ui.text(&date, Rect::new(x0, head.y, dw + 2.0, head.h), 14.0, REGULAR, t.subtext, Align::Left);
+            ui.text(&time, Rect::new(x0 + dw + 12.0, head.y, tw + 2.0, head.h), 14.0, BOLD, t.text, Align::Left);
         }
         let pin = Rect::new(head.right() - 30.0, head.cy() - 15.0, 30.0, 30.0);
         if ui.hovered(pin) {
@@ -965,7 +1153,11 @@ impl Notch {
         // Tool content.
         let content = Rect::new(full.x + SIDE, full.y + HEADER_H, CONTENT_W, tool_h);
         let mut next_tool = None;
+        let key_tool = keyboard_tab(&mut ui, self.tool, &s_);
         views::draw(self.tool, &mut ui, &mut self.views, content, &mut next_tool);
+        if key_tool.is_some() {
+            next_tool = key_tool;
+        }
 
         // Resizable tools: a grab handle under the content; drag to change the height.
         let mut resized = None;

@@ -45,7 +45,7 @@ pub fn draw(ui: &mut Ui, s: &mut State, r: Rect, _go: &mut Option<&'static str>)
     };
     ui.text(&count, head, 12.0, REGULAR, t.subtext, Align::Left);
     if !list.is_empty() {
-        let w = ui.measure("Clear all", 11.5, REGULAR) + 34.0;
+        let w = ui.measure("Clear all", 11.0, REGULAR) + 34.0;
         let b = Rect::new(head.right() - 10.0 - w, head.y, w, head.h);
         if ui.hit(b, 8.0) {
             notifications::clear();
@@ -53,7 +53,7 @@ pub fn draw(ui: &mut Ui, s: &mut State, r: Rect, _go: &mut Option<&'static str>)
             s.expanded.clear();
         }
         ui.icon("Trash", b.x + 14.0, b.cy(), 12.0, t.subtext);
-        ui.text("Clear all", Rect::new(b.x + 25.0, b.y, w - 25.0, b.h), 11.5, REGULAR, t.subtext, Align::Left);
+        ui.text("Clear all", Rect::new(b.x + 25.0, b.y, w - 25.0, b.h), 11.0, REGULAR, t.subtext, Align::Left);
     }
 
     if list.is_empty() {
@@ -86,7 +86,7 @@ pub fn draw(ui: &mut Ui, s: &mut State, r: Rect, _go: &mut Option<&'static str>)
         let est = if n.body.trim().is_empty() {
             0
         } else {
-            (ui.measure(n.body.trim(), 12.5, REGULAR) / text_w.max(1.0)).ceil().max(1.0) as usize
+            (ui.measure(n.body.trim(), 12.0, REGULAR) / text_w.max(1.0)).ceil().max(1.0) as usize
         };
         let lines = if s.expanded.contains(&n.id) { est } else { est.min(COLLAPSED_LINES) };
         let h = 9.0 + 15.0 + 2.0 + 18.0 + if lines > 0 { 2.0 + lines as f32 * BODY_LINE } else { 0.0 } + 10.0;
@@ -128,7 +128,7 @@ pub fn draw(ui: &mut Ui, s: &mut State, r: Rect, _go: &mut Option<&'static str>)
                     if *lines > 0 {
                         let br = Rect::new(x, inner.y + 37.0, w, *lines as f32 * BODY_LINE);
                         ui.push_clip(Rect::new(br.x, br.y, br.w, br.h + 1.0));
-                        ui.wrap(n.body.trim(), br, 12.5, REGULAR, t.subtext);
+                        ui.wrap(n.body.trim(), br, 12.0, REGULAR, t.subtext);
                         ui.pop_clip();
                     }
                     if hov {
@@ -178,7 +178,7 @@ fn empty(ui: &mut Ui, r: Rect) {
     ui.g.fill_circle(r.cx(), cy - 18.0, 17.0, ui.c(t.surface2));
     ui.icon("Bell", r.cx(), cy - 18.0, 16.0, t.subtext);
     let title = if problem.is_some() { "Can't read notifications" } else { "No notifications yet" };
-    ui.text(title, Rect::new(r.x, cy + 4.0, r.w, 22.0), 15.0, SEMIBOLD, t.text, Align::Center);
+    ui.text(title, Rect::new(r.x, cy + 4.0, r.w, 22.0), 14.0, SEMIBOLD, t.text, Align::Center);
     let st = settings::shared();
     let sub = match &problem {
         Some(p) => p.clone(),

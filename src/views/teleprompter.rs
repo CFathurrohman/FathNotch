@@ -23,7 +23,7 @@ const LINE_SPACING: f32 = 1.35;
 const SIDE: f32 = 24.0;
 const SPEED_EASE: f32 = 0.18;
 const NUDGE_EASE: f32 = 0.09;
-const EDIT_SIZE: f32 = 14.5;
+const EDIT_SIZE: f32 = 14.0;
 const EDIT_LINE: f32 = 20.0;
 const EDITOR_ID: &str = "prompter.editor";
 
@@ -112,7 +112,7 @@ pub fn draw(ui: &mut Ui, s: &mut State, r: Rect, _go: &mut Option<&'static str>)
         if hov {
             ui.fill(stage, 10.0, t.surface2);
         }
-        ui.text("Paste or write your script", stage, 18.0, MEDIUM, t.subtext, Align::Center);
+        ui.text("Paste or write your script", stage, 17.0, MEDIUM, t.subtext, Align::Center);
         if ui.clicked(stage) {
             start_editing(ui, s);
         }

@@ -87,11 +87,11 @@ pub fn draw(ui: &mut Ui, s: &mut State, r: Rect, _go: &mut Option<&'static str>)
     let mut field = field_row;
     if let Some((text, bad, at)) = s.status.clone() {
         if at.elapsed().as_secs_f32() < 2.0 {
-            let w = (ui.measure(&text, 12.5, SEMIBOLD).ceil() + 2.0).min(300.0);
+            let w = (ui.measure(&text, 12.0, SEMIBOLD).ceil() + 2.0).min(300.0);
             let (st, f) = field_row.take_right(w + 8.0, 8.0);
             field = f;
             let c = if bad { t.danger } else { color(0x34C759, 1.0) };
-            ui.text(&text, Rect::new(st.x, st.y, w, st.h), 12.5, SEMIBOLD, c, Align::Left);
+            ui.text(&text, Rect::new(st.x, st.y, w, st.h), 12.0, SEMIBOLD, c, Align::Left);
             ui.animate = true;
         } else {
             s.status = None;
@@ -101,7 +101,7 @@ pub fn draw(ui: &mut Ui, s: &mut State, r: Rect, _go: &mut Option<&'static str>)
     field_chrome(ui, field, ui.st.focus == sid, false);
     ui.icon("Magnifier", field.x + 18.5, field.cy(), 15.0, t.subtext);
     let has_text = !ui.field_text(sid).is_empty();
-    let _ = ui.text_field(sid, field.pad(36.0, 0.0, if has_text { 30.0 } else { 10.0 }, 0.0), "Search shortcuts…", 14.0);
+    let _ = ui.text_field(sid, field.pad(36.0, 0.0, if has_text { 30.0 } else { 10.0 }, 0.0), "Search shortcuts…", 13.0);
     let query = ui.field_text(sid).trim().to_lowercase();
     if has_text && ui.icon_button(Rect::new(field.right() - 28.0, field.cy() - 11.0, 22.0, 22.0), "XMark", 12.0, t.subtext) {
         ui.set_field_text(sid, "");
@@ -209,7 +209,7 @@ fn editor(ui: &mut Ui, s: &mut State, r: Rect) {
             submit = true;
         }
         let before = ui.field_text(fid);
-        let _ = ui.text_field(fid, fr.pad(12.0, 0.0, 10.0, 0.0), ph, 14.0);
+        let _ = ui.text_field(fid, fr.pad(12.0, 0.0, 10.0, 0.0), ph, 13.0);
         if bad && ui.field_text(fid) != before {
             s.invalid = None;
         }

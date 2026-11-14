@@ -178,7 +178,7 @@ pub fn draw(ui: &mut Ui, s: &mut State, r: Rect, _go: &mut Option<&'static str>)
             // C# stack (margin-top 10, centred): title 18, +3 session 15, +7 dots 7, +8 today 14.5.
             let y = inner.cy() - 31.0;
             title_row(ui, ix, y, iw, if is_break { "Moon" } else { "Bolt" }, if is_break { "Break" } else { "Focus" });
-            ui.text(&format!("Session {} of 4", rounds % 4 + 1), Rect::new(ix, y + 20.0, iw, 17.0), 12.5, SEMIBOLD, t.subtext, Align::Left);
+            ui.text(&format!("Session {} of 4", rounds % 4 + 1), Rect::new(ix, y + 20.0, iw, 17.0), 12.0, SEMIBOLD, t.subtext, Align::Left);
             let mut filled = rounds % 4;
             if rounds > 0 && filled == 0 {
                 filled = 4;
@@ -197,7 +197,7 @@ pub fn draw(ui: &mut Ui, s: &mut State, r: Rect, _go: &mut Option<&'static str>)
         Kind::Countdown => {
             let y = inner.cy() - 24.0;
             title_row(ui, ix, y, iw, "Clock", "Timer");
-            ui.text(&format!("{timer_min} minute countdown"), Rect::new(ix, y + 20.0, iw, 17.0), 12.5, SEMIBOLD, t.subtext, Align::Left);
+            ui.text(&format!("{timer_min} minute countdown"), Rect::new(ix, y + 20.0, iw, 17.0), 12.0, SEMIBOLD, t.subtext, Align::Left);
             ui.text("Stays in the closed notch.", Rect::new(ix, y + 43.0, iw, 16.0), 12.0, SEMIBOLD, t.subtext, Align::Left);
         }
         Kind::Stopwatch => {
@@ -208,7 +208,7 @@ pub fn draw(ui: &mut Ui, s: &mut State, r: Rect, _go: &mut Option<&'static str>)
                 1 => "1 lap".to_string(),
                 n => format!("{n} laps"),
             };
-            ui.text(&laps, Rect::new(ix, y + 20.0, iw, 17.0), 12.5, SEMIBOLD, t.subtext, Align::Left);
+            ui.text(&laps, Rect::new(ix, y + 20.0, iw, 17.0), 12.0, SEMIBOLD, t.subtext, Align::Left);
             ui.text("Counts up from zero.", Rect::new(ix, y + 43.0, iw, 16.0), 12.0, SEMIBOLD, t.subtext, Align::Left);
         }
     }
@@ -292,7 +292,7 @@ fn draw_popup(ui: &mut Ui, s: &mut State, area: Rect) {
 fn segments(ui: &mut Ui, s: &mut State, r: Rect) {
     let t = ui.t;
     let labels = [("Timer", Kind::Countdown), ("Stopwatch", Kind::Stopwatch), ("Pomodoro", Kind::Pomodoro)];
-    let widths: Vec<f32> = labels.iter().map(|(l, _)| (ui.measure(l, 13.5, SEMIBOLD) + 28.0).max(104.0)).collect();
+    let widths: Vec<f32> = labels.iter().map(|(l, _)| (ui.measure(l, 13.0, SEMIBOLD) + 28.0).max(104.0)).collect();
     let total: f32 = widths.iter().sum::<f32>() + 6.0;
     let bar = Rect::new(r.cx() - total / 2.0, r.y, total, 36.0);
     ui.fill(bar, 11.0, t.surface);
@@ -324,7 +324,7 @@ fn circle_button(ui: &mut Ui, r: Rect, icon: &'static str) -> bool {
 fn title_row(ui: &mut Ui, x: f32, y: f32, w: f32, icon: &'static str, label: &str) {
     let t = ui.t;
     ui.icon(icon, x + 8.5, y + 10.0, 17.0, t.text);
-    ui.text(label, Rect::new(x + 24.0, y, w - 24.0, 20.0), 15.0, SEMIBOLD, t.text, Align::Left);
+    ui.text(label, Rect::new(x + 24.0, y, w - 24.0, 20.0), 14.0, SEMIBOLD, t.text, Align::Left);
 }
 
 /// Stopwatch: the boxes stay (C# disables them, which looks the same) but do nothing.

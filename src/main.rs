@@ -319,6 +319,8 @@ thread_local! {
     static APP: RefCell<Option<Notch>> = const { RefCell::new(None) };
     static HOVER: RefCell<bool> = const { RefCell::new(false) };
     static CAPS: RefCell<(bool, bool)> = const { RefCell::new((false, false)) }; // (toggled on, key held)
+    /// The window that had the keyboard before the panel took it.
+    static PREV_FOREGROUND: RefCell<isize> = const { RefCell::new(0) };
 }
 
 /// Runs `f` on the notch if it exists and isn't already borrowed (re-entrant messages are skipped).
@@ -391,6 +393,11 @@ fn take_keyboard(hwnd: HWND) {
         return; // off-screen runs get their typing from the script
     }
     unsafe {
+        // Remember the window the user was in, to hand the keyboard back when the panel closes.
+        let fg = GetForegroundWindow();
+        if fg != hwnd && !fg.is_invalid() {
+            PREV_FOREGROUND.with(|p| *p.borrow_mut() = fg.0 as isize);
+        }
         let ex = GetWindowLongW(hwnd, GWL_EXSTYLE);
         SetWindowLongW(hwnd, GWL_EXSTYLE, ex & !(WS_EX_NOACTIVATE.0 as i32));
         let _ = SetForegroundWindow(hwnd);
@@ -402,6 +409,22 @@ fn release_keyboard(hwnd: HWND) {
     unsafe {
         let ex = GetWindowLongW(hwnd, GWL_EXSTYLE);
         SetWindowLongW(hwnd, GWL_EXSTYLE, ex | WS_EX_NOACTIVATE.0 as i32);
+        // Still in front (closed by the pointer leaving or Esc): give the keyboard back.
+        if GetForegroundWindow() == hwnd {
+            let prev = PREV_FOREGROUND.with(|p| std::mem::take(&mut *p.borrow_mut()));
+            if prev != 0 {
+                let _ = SetForegroundWindow(HWND(prev as _));
+            }
+        }
+    }
+}
+
+/// Opening the panel by clicking in it or with a hotkey lets it take keys (tab switching with ←/→ and 1…9).
+fn panel_keyboard(hwnd: HWND) {
+    if with(|n| n.expanded()).unwrap_or(false) {
+        take_keyboard(hwnd);
+    } else {
+        release_keyboard(hwnd);
     }
 }
 
@@ -533,6 +556,9 @@ fn set_mouse(n: &mut Notch, lparam: LPARAM) {
 
 fn key_from(vk: u32, ctrl: bool) -> Option<Key> {
     Some(match vk {
+        0x25 if ctrl => Key::TabPrev,
+        0x27 if ctrl => Key::TabNext,
+        0x31..=0x39 if ctrl => Key::TabAt((vk - 0x30) as u8),
         0x0D => Key::Enter,
         0x1B => Key::Escape,
         0x08 => Key::Backspace,
@@ -623,6 +649,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                     return LRESULT(0);
                 }
                 SetCapture(hwnd);
+                take_keyboard(hwnd);
                 with(|n| {
                     set_mouse(n, lparam);
                     if msg == WM_LBUTTONDOWN {
@@ -776,6 +803,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
             }
             WM_HOTKEY => {
                 on_hotkey(wparam.0);
+                panel_keyboard(hwnd);
                 LRESULT(0)
             }
             WM_INPUT => {
@@ -982,6 +1010,9 @@ fn main() -> Result<()> {
                 caps_alert(true);
             } else if demo == "closed" {
                 // stays closed (screenshots of the pill)
+            } else if demo == "eyes" {
+                // the peeking cat eyes (FATHNOTCH_SHOT_WAIT picks the moment)
+                with(|n| n.show_eyes());
             } else if !demo.is_empty() {
                 let id = if demo == "settings" { "settings" } else { tools::find(&demo).id };
                 let r = with(|n| {

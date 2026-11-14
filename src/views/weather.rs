@@ -103,7 +103,7 @@ pub fn draw(ui: &mut Ui, s: &mut State, r: Rect, _go: &mut Option<&'static str>)
     ui.fill(field, 9.0, t.surface2);
     ui.g.stroke_round(field.inset(0.5, 0.5).d2d(), 8.5, ui.c(t.stroke), 1.0);
     ui.icon("MapPin", field.x + 18.5, field.cy(), 15.0, t.subtext);
-    if let Some(city) = ui.text_field(id(FIELD), field.pad(36.0, 0.0, 10.0, 0.0), "City", 14.0) {
+    if let Some(city) = ui.text_field(id(FIELD), field.pad(36.0, 0.0, 10.0, 0.0), "City", 13.0) {
         ui.set_field_text(id(FIELD), &city);
         ui.st.focus = 0;
         settings::update_quiet(|x| x.weather_city = city);
@@ -114,7 +114,7 @@ pub fn draw(ui: &mut Ui, s: &mut State, r: Rect, _go: &mut Option<&'static str>)
         (d.status.clone(), d.loading, d.forecast.clone())
     };
     let refresh = Rect::new(top.right() - 30.0, top.cy() - 15.0, 30.0, 30.0);
-    ui.text(&status, Rect::new(field.right() + 10.0, top.y, refresh.x - field.right() - 20.0, top.h), 12.5, SEMIBOLD, t.subtext, Align::Left);
+    ui.text(&status, Rect::new(field.right() + 10.0, top.y, refresh.x - field.right() - 20.0, top.h), 12.0, SEMIBOLD, t.subtext, Align::Left);
     if ui.icon_button(refresh, "Refresh", 14.0, t.subtext) {
         weather::invalidate();
         load(s, false);
@@ -140,10 +140,10 @@ fn current(ui: &mut Ui, r: Rect, w: &weather::Current, today: Option<&weather::D
     glyph(ui, r.x + 40.0, r.y + 55.0, 64.0, w.code, w.is_day);
     let x = r.x + 92.0;
     let temp = weather::degrees(w.temp);
-    let tw = ui.measure(&temp, 44.0, LIGHT);
-    ui.text(&temp, Rect::new(x, r.y + 9.0, tw + 6.0, 54.0), 44.0, LIGHT, t.text, Align::Left);
+    let tw = ui.measure(&temp, 40.0, LIGHT);
+    ui.text(&temp, Rect::new(x, r.y + 9.0, tw + 6.0, 54.0), 40.0, LIGHT, t.text, Align::Left);
     ui.text(weather::describe(w.code), Rect::new(x + tw + 10.0, r.y + 36.0, 220.0, 20.0), 14.0, MEDIUM, t.text, Align::Left);
-    ui.text(&w.city, Rect::new(x, r.y + 69.0, 340.0, 18.0), 12.5, SEMIBOLD, t.subtext, Align::Left);
+    ui.text(&w.city, Rect::new(x, r.y + 69.0, 340.0, 18.0), 12.0, SEMIBOLD, t.subtext, Align::Left);
 
     let unit = if settings::shared().use_fahrenheit { "mph" } else { "km/h" };
     let range = today.map_or("–".to_string(), |d| format!("{} / {}", weather::degrees(d.max), weather::degrees(d.min)));
@@ -153,7 +153,7 @@ fn current(ui: &mut Ui, r: Rect, w: &weather::Current, today: Option<&weather::D
         ("Cloud", format!("{:.0} {unit}", w.wind)),
         ("ArrowsUpDown", range),
     ];
-    let m = |ui: &Ui, s: &str| ui.measure(s, 12.5, SEMIBOLD);
+    let m = |ui: &Ui, s: &str| ui.measure(s, 12.0, SEMIBOLD);
     let col_w = [m(ui, &items[0].1).max(m(ui, &items[2].1)), m(ui, &items[1].1).max(m(ui, &items[3].1))];
     // Each cell: 13 px icon, 5 px gap, text; 14 px between the columns; 4 px from the right edge.
     let right = r.right() - 4.0;
@@ -163,7 +163,7 @@ fn current(ui: &mut Ui, r: Rect, w: &weather::Current, today: Option<&weather::D
         let x = if i % 2 == 0 { x0 } else { x1 };
         let cy = r.y + 42.0 + (i / 2) as f32 * 19.0;
         ui.icon(icon, x + 6.5, cy, 13.0, t.subtext);
-        ui.text(label, Rect::new(x + 18.0, cy - 9.0, 140.0, 18.0), 12.5, SEMIBOLD, t.subtext, Align::Left);
+        ui.text(label, Rect::new(x + 18.0, cy - 9.0, 140.0, 18.0), 12.0, SEMIBOLD, t.subtext, Align::Left);
     }
 }
 
@@ -172,7 +172,7 @@ fn daily_strip(ui: &mut Ui, r: Rect, days: &[weather::Day]) {
     let n = days.len().clamp(1, 7);
     for (i, (d, c)) in days.iter().zip(r.columns(n, 4.0)).enumerate() {
         let label = if i == 0 { "TODAY".to_string() } else { day_name(&d.date).to_uppercase() };
-        ui.text(&label, Rect::new(c.x, c.y + 7.0, c.w, 18.0), 11.5, BOLD, t.subtext, Align::Center);
+        ui.text(&label, Rect::new(c.x, c.y + 7.0, c.w, 18.0), 11.0, BOLD, t.subtext, Align::Center);
         glyph(ui, c.cx(), c.y + 45.0, 30.0, d.code, true);
         ui.text(&weather::degrees(d.max), Rect::new(c.x, c.y + 64.0, c.w, 20.0), 14.0, SEMIBOLD, t.text, Align::Center);
         ui.text(&weather::degrees(d.min), Rect::new(c.x, c.y + 81.0, c.w, 18.0), 13.0, SEMIBOLD, t.subtext, Align::Center);

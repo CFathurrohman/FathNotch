@@ -106,10 +106,10 @@ fn off_state(ui: &mut Ui, snap: &Snapshot, r: Rect) {
     let waiting = snap.outbox.len();
     let body = "Send files and text both ways between your phone and this PC. Scan a QR code, no app needed.";
     let lines = wrap(ui, body, 12.0, REGULAR, w - 40.0);
-    let status_lines = if snap.status.is_empty() { vec![] } else { wrap(ui, &snap.status, 11.5, REGULAR, w) };
+    let status_lines = if snap.status.is_empty() { vec![] } else { wrap(ui, &snap.status, 11.0, REGULAR, w) };
     let h = 72.0 + 14.0 + lh(17.0) + 4.0 + lines.len() as f32 * lh(12.0) + 14.0 + 26.0 + 16.0 + 34.0
-        + if waiting > 0 { 10.0 + lh(11.5) } else { 0.0 }
-        + if status_lines.is_empty() { 0.0 } else { 8.0 + status_lines.len() as f32 * lh(11.5) };
+        + if waiting > 0 { 10.0 + lh(11.0) } else { 0.0 }
+        + if status_lines.is_empty() { 0.0 } else { 8.0 + status_lines.len() as f32 * lh(11.0) };
     let mut y = r.cy() - h / 2.0;
 
     // Hero: a breathing halo, the accent tile, the phone glyph.
@@ -157,14 +157,14 @@ fn off_state(ui: &mut Ui, snap: &Snapshot, r: Rect) {
         } else {
             format!("{waiting} items waiting · turn on to send them")
         };
-        ui.text(&msg, Rect::new(x, y, w, lh(11.5)), 11.5, MEDIUM, t.accent, Align::Center);
-        y += lh(11.5);
+        ui.text(&msg, Rect::new(x, y, w, lh(11.0)), 11.0, MEDIUM, t.accent, Align::Center);
+        y += lh(11.0);
     }
     if !status_lines.is_empty() {
         y += 8.0;
         for l in &status_lines {
-            ui.text(l, Rect::new(x, y, w, lh(11.5)), 11.5, REGULAR, t.danger, Align::Center);
-            y += lh(11.5);
+            ui.text(l, Rect::new(x, y, w, lh(11.0)), 11.0, REGULAR, t.danger, Align::Center);
+            y += lh(11.0);
         }
     }
 }
@@ -175,7 +175,7 @@ fn on_state(ui: &mut Ui, s: &mut State, snap: &Snapshot, r: Rect) {
 
     // Header left: the link chip (accent with a pulse while the phone page is open).
     let link = if snap.connected { "Phone connected" } else { "Waiting for phone" };
-    let lw = ui.measure(link, 11.5, SEMIBOLD).ceil() + 40.0;
+    let lw = ui.measure(link, 11.0, SEMIBOLD).ceil() + 40.0;
     let chip = Rect::new(head.x, head.y, lw, head.h);
     let (dot_x, dot_y) = (chip.x + 16.0, chip.cy());
     if snap.connected {
@@ -183,21 +183,21 @@ fn on_state(ui: &mut Ui, s: &mut State, snap: &Snapshot, r: Rect) {
         let p = (clock() * 0.7).fract();
         ui.g.fill_circle(dot_x, dot_y, 4.0 + 6.0 * p, ui.c(with_alpha(t.accent, 0.45 * (1.0 - p))));
         ui.g.fill_circle(dot_x, dot_y, 4.0, ui.c(t.accent));
-        ui.text(link, Rect::new(dot_x + 10.0, chip.y, lw, chip.h), 11.5, SEMIBOLD, t.accent, Align::Left);
+        ui.text(link, Rect::new(dot_x + 10.0, chip.y, lw, chip.h), 11.0, SEMIBOLD, t.accent, Align::Left);
     } else {
         ui.fill(chip, 13.0, t.surface2);
         let blink = 0.45 + 0.55 * (0.5 + 0.5 * (clock() * 3.0).sin());
         ui.g.fill_circle(dot_x, dot_y, 4.0, ui.c(with_alpha(t.subtext, blink)));
-        ui.text(link, Rect::new(dot_x + 10.0, chip.y, lw, chip.h), 11.5, SEMIBOLD, t.subtext, Align::Left);
+        ui.text(link, Rect::new(dot_x + 10.0, chip.y, lw, chip.h), 11.0, SEMIBOLD, t.subtext, Align::Left);
     }
 
     // Header right: Received, Turn off; a status or note to their left.
-    let off_w = button_w(ui, "Turn off", false, 11.5, MEDIUM);
+    let off_w = button_w(ui, "Turn off", false, 11.0, MEDIUM);
     let off_r = Rect::new(head.right() - off_w, head.y, off_w, head.h);
     if button(ui, off_r, "Turn off", None, 11.5, false, true) {
         bg::spawn(phone::turn_off);
     }
-    let rec_w = button_w(ui, "Received", true, 11.5, MEDIUM);
+    let rec_w = button_w(ui, "Received", true, 11.0, MEDIUM);
     let rec_r = Rect::new(off_r.x - 6.0 - rec_w, head.y, rec_w, head.h);
     if button(ui, rec_r, "Received", Some("Folder"), 11.5, false, true) {
         let dir = phone::receive_folder();
@@ -210,10 +210,10 @@ fn on_state(ui: &mut Ui, s: &mut State, snap: &Snapshot, r: Rect) {
     let status = note.unwrap_or_else(|| snap.status.clone());
     let free = rec_r.x - 10.0 - chip.right() - 10.0;
     if !status.is_empty() {
-        let w = (ui.measure(&status, 11.5, REGULAR).ceil() + 2.0).min(free.max(0.0));
-        ui.text(&status, Rect::new(rec_r.x - 10.0 - w, head.y, w, head.h), 11.5, REGULAR, t.danger, Align::Right);
+        let w = (ui.measure(&status, 11.0, REGULAR).ceil() + 2.0).min(free.max(0.0));
+        ui.text(&status, Rect::new(rec_r.x - 10.0 - w, head.y, w, head.h), 11.0, REGULAR, t.danger, Align::Right);
     } else if !snap.connected && free > 240.0 {
-        ui.text("Scan the code with your phone's camera", Rect::new(chip.right() + 10.0, head.y, free, head.h), 11.5, REGULAR, t.subtext, Align::Left);
+        ui.text("Scan the code with your phone's camera", Rect::new(chip.right() + 10.0, head.y, free, head.h), 11.0, REGULAR, t.subtext, Align::Left);
     }
 
     // Columns: QR card (150) | 12 | To phone card | 12 | Activity card.
@@ -250,8 +250,8 @@ fn qr_panel(ui: &mut Ui, s: &mut State, snap: &Snapshot, r: Rect) {
     // The white code in an accent ring (up to 124, smaller in a short panel), "Scan with your phone", the
     // address chip when it fits; the steps when tall.
     let steps = r.h >= 340.0;
-    let steps_h = if steps { 16.0 + 1.0 + 12.0 + lh(9.5) + 8.0 + 3.0 * 26.0 } else { 0.0 };
-    let caption = 10.0 + lh(11.5);
+    let steps_h = if steps { 16.0 + 1.0 + 12.0 + lh(10.0) + 8.0 + 3.0 * 26.0 } else { 0.0 };
+    let caption = 10.0 + lh(11.0);
     let addr = inner.h >= 110.0 + caption + 26.0;
     let ring_side = (inner.h - caption - if addr { 26.0 } else { 0.0 }).clamp(84.0, 124.0).min(inner.w).floor();
     let h = ring_side + caption + if addr { 26.0 } else { 0.0 } + steps_h;
@@ -288,8 +288,8 @@ fn qr_panel(ui: &mut Ui, s: &mut State, snap: &Snapshot, r: Rect) {
         }
     }
     y += ring_side + 10.0;
-    ui.text("Scan with your phone", Rect::new(inner.x, y, inner.w, lh(11.5)), 11.5, SEMIBOLD, t.text, Align::Center);
-    y += lh(11.5);
+    ui.text("Scan with your phone", Rect::new(inner.x, y, inner.w, lh(11.0)), 11.0, SEMIBOLD, t.text, Align::Center);
+    y += lh(11.0);
     if addr {
         y += 6.0;
         let authority = url.split("://").nth(1).and_then(|x| x.split('/').next()).unwrap_or("").to_string();
@@ -305,17 +305,17 @@ fn qr_panel(ui: &mut Ui, s: &mut State, snap: &Snapshot, r: Rect) {
         y += 16.0;
         ui.fill(Rect::new(x0, y, w, 1.0), 0.0, with_alpha(t.accent, 0.18));
         y += 12.0;
-        ui.text("HOW IT WORKS", Rect::new(x0, y, w, lh(9.5)), 9.5, BOLD, t.accent, Align::Left);
-        y += lh(9.5) + 8.0;
+        ui.text("HOW IT WORKS", Rect::new(x0, y, w, lh(10.0)), 10.0, BOLD, t.accent, Align::Left);
+        y += lh(10.0) + 8.0;
         for (i, step) in ["Phone on the same Wi-Fi as this PC", "Scan the code with its camera", "Drop files here, or send from the page"].iter().enumerate() {
             let c = Rect::new(x0, y, 18.0, 18.0);
             ui.fill(c, 9.0, t.accent);
             ui.text(&(i + 1).to_string(), c, 10.0, BOLD, t.on_accent, Align::Center);
-            let lines = wrap(ui, step, 10.5, REGULAR, w - 25.0);
+            let lines = wrap(ui, step, 11.0, REGULAR, w - 25.0);
             let mut ly = y + 1.0;
             for l in &lines {
-                ui.text(l, Rect::new(x0 + 25.0, ly, w - 25.0, lh(10.5)), 10.5, REGULAR, t.subtext, Align::Left);
-                ly += lh(10.5);
+                ui.text(l, Rect::new(x0 + 25.0, ly, w - 25.0, lh(11.0)), 11.0, REGULAR, t.subtext, Align::Left);
+                ly += lh(11.0);
             }
             y = ly.max(y + 18.0) + 8.0;
         }
@@ -326,8 +326,8 @@ fn qr_panel(ui: &mut Ui, s: &mut State, snap: &Snapshot, r: Rect) {
 fn empty(ui: &mut Ui, r: Rect, icon: &'static str, title: &str, sub: &str) {
     let t = ui.t;
     let inner = r.inset(10.0, 10.0);
-    let lines = wrap(ui, sub, 10.5, REGULAR, inner.w);
-    let h = 38.0 + 8.0 + lh(12.0) + 2.0 + lines.len() as f32 * lh(10.5);
+    let lines = wrap(ui, sub, 11.0, REGULAR, inner.w);
+    let h = 38.0 + 8.0 + lh(12.0) + 2.0 + lines.len() as f32 * lh(11.0);
     let mut y = r.cy() - h / 2.0;
     ui.g.fill_circle(r.cx(), y + 19.0, 19.0, ui.c(t.accent_soft));
     ui.icon(icon, r.cx(), y + 19.0, 17.0, t.accent);
@@ -335,8 +335,8 @@ fn empty(ui: &mut Ui, r: Rect, icon: &'static str, title: &str, sub: &str) {
     ui.text(title, Rect::new(inner.x, y, inner.w, lh(12.0)), 12.0, SEMIBOLD, t.text, Align::Center);
     y += lh(12.0) + 2.0;
     for l in &lines {
-        ui.text(l, Rect::new(inner.x, y, inner.w, lh(10.5)), 10.5, REGULAR, t.subtext, Align::Center);
-        y += lh(10.5);
+        ui.text(l, Rect::new(inner.x, y, inner.w, lh(11.0)), 11.0, REGULAR, t.subtext, Align::Center);
+        y += lh(11.0);
     }
 }
 
@@ -344,8 +344,8 @@ fn empty(ui: &mut Ui, r: Rect, icon: &'static str, title: &str, sub: &str) {
 fn caps(ui: &mut Ui, text: &str, count: usize, r: Rect) {
     let t = ui.t;
     ui.fill(Rect::new(r.x, r.cy() - 6.0, 3.0, 12.0), 1.5, t.accent);
-    let tw = ui.measure(text, 10.5, BOLD).ceil();
-    ui.text(text, Rect::new(r.x + 9.0, r.y, tw + 2.0, r.h), 10.5, BOLD, t.text, Align::Left);
+    let tw = ui.measure(text, 11.0, BOLD).ceil();
+    ui.text(text, Rect::new(r.x + 9.0, r.y, tw + 2.0, r.h), 11.0, BOLD, t.text, Align::Left);
     if count > 0 {
         let label = count.to_string();
         let bw = (ui.measure(&label, 10.0, BOLD).ceil() + 10.0).max(18.0);
@@ -402,7 +402,7 @@ fn outbox_panel(ui: &mut Ui, s: &mut State, snap: &Snapshot, r: Rect) {
         empty(ui, body, "ArrowUp", "Drop files or folders here", "They show up on the phone page right away.");
         return;
     }
-    let row_h = 8.0 + lh(11.5) + lh(10.5) + 8.0;
+    let row_h = 8.0 + lh(11.0) + lh(11.0) + 8.0;
     let items = snap.outbox.clone();
     let mut remove = None;
     ui.scroll(id("phone.outbox"), body, items.len() as f32 * (row_h + 5.0), |ui, top| {
@@ -420,12 +420,12 @@ fn outbox_panel(ui: &mut Ui, s: &mut State, snap: &Snapshot, r: Rect) {
                 }
             };
             icon_tile(ui, row.x + 8.0 + 13.0, row.cy(), icon, true, None);
-            let tx = Rect::new(row.x + 42.0, row.y + 8.0, row.w - 42.0 - 8.0 - 24.0, lh(11.5));
-            ui.text(&o.name, tx, 11.5, SEMIBOLD, t.text, Align::Left);
-            let sub = Rect::new(tx.x, tx.bottom(), tx.w, lh(10.5));
+            let tx = Rect::new(row.x + 42.0, row.y + 8.0, row.w - 42.0 - 8.0 - 24.0, lh(11.0));
+            ui.text(&o.name, tx, 11.0, SEMIBOLD, t.text, Align::Left);
+            let sub = Rect::new(tx.x, tx.bottom(), tx.w, lh(11.0));
             let detail = format!("{} · ", o.detail());
-            let dw = ui.measure(&detail, 10.5, REGULAR).ceil();
-            ui.text(&detail, sub, 10.5, REGULAR, t.subtext, Align::Left);
+            let dw = ui.measure(&detail, 11.0, REGULAR).ceil();
+            ui.text(&detail, sub, 11.0, REGULAR, t.subtext, Align::Left);
             if dw < sub.w {
                 let (sc, sw) = if done { (t.accent, MEDIUM) } else { (t.subtext, REGULAR) };
                 ui.text(&o.state, Rect::new(sub.x + dw, sub.y, sub.w - dw, sub.h), 10.5, sw, sc, Align::Left);
@@ -453,7 +453,7 @@ fn activity_panel(ui: &mut Ui, s: &State, snap: &Snapshot, r: Rect) {
         empty(ui, body, "ArrowsUpDown", "Nothing yet", &format!("Files from the phone land on the Shelf and in {}.", s.folder_short));
         return;
     }
-    let base_h = 8.0 + lh(11.5) + lh(10.5) + 8.0;
+    let base_h = 8.0 + lh(11.0) + lh(11.0) + 8.0;
     let items = snap.transfers.clone();
     let heights: Vec<f32> = items.iter().map(|tr| base_h + if tr.active { 8.0 } else { 0.0 }).collect();
     let content: f32 = heights.iter().map(|h| h + 5.0).sum();
@@ -472,12 +472,12 @@ fn activity_panel(ui: &mut Ui, s: &State, snap: &Snapshot, r: Rect) {
             let c = if tr.failed { Some(t.danger) } else { None };
             icon_tile(ui, row.x + 8.0 + 13.0, row.y + 8.0 + 13.0, dir, tr.incoming || tr.active, c);
             let right_pad = 8.0 + 24.0;
-            let tx = Rect::new(row.x + 42.0, row.y + 8.0, row.w - 42.0 - right_pad, lh(11.5));
-            ui.text(&tr.title, tx, 11.5, SEMIBOLD, t.text, Align::Left);
+            let tx = Rect::new(row.x + 42.0, row.y + 8.0, row.w - 42.0 - right_pad, lh(11.0));
+            ui.text(&tr.title, tx, 11.0, SEMIBOLD, t.text, Align::Left);
             let sub = if tr.state.is_empty() { tr.direction() } else { format!("{} · {}", tr.direction(), tr.state) };
-            ui.text(&sub, Rect::new(tx.x, tx.bottom(), tx.w, lh(10.5)), 10.5, REGULAR, if tr.failed { t.danger } else { t.subtext }, Align::Left);
+            ui.text(&sub, Rect::new(tx.x, tx.bottom(), tx.w, lh(11.0)), 11.0, REGULAR, if tr.failed { t.danger } else { t.subtext }, Align::Left);
             if tr.active {
-                let track = Rect::new(tx.x, tx.bottom() + lh(10.5) + 4.0, tx.w, 4.0);
+                let track = Rect::new(tx.x, tx.bottom() + lh(11.0) + 4.0, tx.w, 4.0);
                 ui.fill(track, 2.0, t.accent_soft);
                 let f = tr.progress().clamp(0.0, 1.0);
                 if f > 0.0 {

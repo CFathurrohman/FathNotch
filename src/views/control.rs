@@ -161,8 +161,8 @@ fn tile(ui: &mut Ui, r: Rect, icon: &'static str, name: &str, status: &str, on: 
     ui.g.fill_circle(badge.cx(), badge.cy(), 15.0, ui.c(with_alpha(bg, bg.a * bo)));
     ui.icon(icon, badge.cx(), badge.cy(), 15.0, with_alpha(if on { t.on_accent } else { t.subtext }, bo));
     ui.icon("ChevronRight", r.right() - 8.0 - 5.5, r.y + 13.0 + 5.5, 11.0, with_alpha(t.subtext, 0.6));
-    ui.text(name, Rect::new(r.x + 9.0, r.y + 46.0, r.w - 13.0, 14.0), 11.5, SEMIBOLD, t.text, Align::Left);
-    ui.text(status, Rect::new(r.x + 9.0, r.y + 60.0, r.w - 13.0, 13.0), 10.5, REGULAR, t.subtext, Align::Left);
+    ui.text(name, Rect::new(r.x + 9.0, r.y + 46.0, r.w - 13.0, 14.0), 11.0, SEMIBOLD, t.text, Align::Left);
+    ui.text(status, Rect::new(r.x + 9.0, r.y + 60.0, r.w - 13.0, 13.0), 11.0, REGULAR, t.subtext, Align::Left);
     ui.alpha = base;
     if !available {
         let _ = ui.clicked(r); // swallow
@@ -393,7 +393,7 @@ fn combo(ui: &mut Ui, cid: u64, r: Rect, options: &[String], selected: usize, en
         ui.fill(r, 7.0, t.surface2);
     }
     let label = options.get(selected).map(String::as_str).unwrap_or("");
-    ui.text(label, r.pad(9.0, 0.0, 26.0, 0.0), 11.5, REGULAR, t.text, Align::Left);
+    ui.text(label, r.pad(9.0, 0.0, 26.0, 0.0), 11.0, REGULAR, t.text, Align::Left);
     let (cx, cy) = (r.right() - 10.0 - 4.0, r.cy());
     let c = ui.c(t.subtext);
     ui.g.line(cx - 4.0, cy - 2.0, cx, cy + 2.0, c, 1.4);
@@ -408,7 +408,7 @@ fn brightness_card(ui: &mut Ui, s: &mut State, d: &Data, r: Rect) {
     ui.card(r, 16.0);
     let inner = r.pad(14.0, 10.0, 14.0, 8.0);
     ui.icon("Sun", inner.x + 6.5, inner.y + 7.0, 13.0, t.subtext);
-    ui.text("BRIGHTNESS", Rect::new(inner.x + 19.0, inner.y, 200.0, 14.0), 10.5, BOLD, t.subtext, Align::Left);
+    ui.text("BRIGHTNESS", Rect::new(inner.x + 19.0, inner.y, 200.0, 14.0), 11.0, BOLD, t.subtext, Align::Left);
     let list = Rect::new(inner.x, inner.y + 20.0, inner.w, inner.h - 20.0);
     if d.displays.is_empty() {
         let msg = if d.loaded {
@@ -416,7 +416,7 @@ fn brightness_card(ui: &mut Ui, s: &mut State, d: &Data, r: Rect) {
         } else {
             "Looking for displays…"
         };
-        ui.wrap(msg, Rect::new(list.x, list.cy() - 15.0, list.w, 30.0), 11.5, REGULAR, t.subtext);
+        ui.wrap(msg, Rect::new(list.x, list.cy() - 15.0, list.w, 30.0), 11.0, REGULAR, t.subtext);
         return;
     }
     // Each display: name (14) and a 22 high slider line; 6 between.
@@ -428,7 +428,7 @@ fn brightness_card(ui: &mut Ui, s: &mut State, d: &Data, r: Rect) {
         for (i, disp) in displays.iter().enumerate() {
             let y = top + i as f32 * (row_h + 6.0);
             let name = if disp.internal && !disp.name.to_lowercase().contains("built-in") { format!("Built-in · {}", disp.name) } else { disp.name.clone() };
-            ui.text(&name, Rect::new(list.x, y, list.w, 14.0), 11.5, MEDIUM, ui.t.text, Align::Left);
+            ui.text(&name, Rect::new(list.x, y, list.w, 14.0), 11.0, MEDIUM, ui.t.text, Align::Left);
             let line = Rect::new(list.x, y + 14.0, list.w, 22.0);
             let track = Rect::new(line.x, line.y, line.w - 30.0 - 6.0, line.h);
             if let Some(nv) = slider(ui, idx("ctl.disp", i), track, Rect::new(list.x, y, list.w, row_h), disp.level as f32 / 100.0) {
@@ -440,7 +440,7 @@ fn brightness_card(ui: &mut Ui, s: &mut State, d: &Data, r: Rect) {
                 }
             }
             let shown = data.lock().unwrap().displays.get(i).map_or(disp.level, |x| x.level);
-            ui.text(&shown.to_string(), Rect::new(line.right() - 30.0, line.y, 30.0, line.h), 11.5, SEMIBOLD, ui.t.subtext, Align::Right);
+            ui.text(&shown.to_string(), Rect::new(line.right() - 30.0, line.y, 30.0, line.h), 11.0, SEMIBOLD, ui.t.subtext, Align::Right);
         }
     });
 }
@@ -508,7 +508,7 @@ fn sound_card(ui: &mut Ui, s: &mut State, d: &Data, r: Rect) {
                 let x = s.data.lock().unwrap();
                 (if input { x.in_level } else { x.out_level }).map_or(lv, |l| l.0)
             };
-            ui.text(&((shown * 100.0).round() as i32).to_string(), Rect::new(track.right() + 6.0, row.y, 30.0, row.h), 11.5, SEMIBOLD, t.subtext, Align::Right);
+            ui.text(&((shown * 100.0).round() as i32).to_string(), Rect::new(track.right() + 6.0, row.y, 30.0, row.h), 11.0, SEMIBOLD, t.subtext, Align::Right);
             y += 30.0;
         }
         y += 2.0;
@@ -520,7 +520,7 @@ fn sound_card(ui: &mut Ui, s: &mut State, d: &Data, r: Rect) {
     let sessions = d.sessions.clone();
     if sessions.is_empty() {
         if d.loaded {
-            ui.text("No apps are using sound right now", Rect::new(list.x + 2.0, list.y + 10.0, list.w, 16.0), 11.5, REGULAR, t.subtext, Align::Left);
+            ui.text("No apps are using sound right now", Rect::new(list.x + 2.0, list.y + 10.0, list.w, 16.0), 11.0, REGULAR, t.subtext, Align::Left);
         }
         return;
     }
@@ -563,7 +563,7 @@ fn sound_card(ui: &mut Ui, s: &mut State, d: &Data, r: Rect) {
                 bg::spawn(move || audio::set_session_volume(pid, nv));
             }
             let (vol, muted) = data.lock().unwrap().sessions.get(i).map_or((ses.volume, ses.muted), |x| (x.volume, x.muted));
-            ui.text(&((vol * 100.0).round() as i32).to_string(), Rect::new(row.right() - 28.0 - 30.0, row.y, 30.0, row.h), 11.5, SEMIBOLD, t.subtext, Align::Right);
+            ui.text(&((vol * 100.0).round() as i32).to_string(), Rect::new(row.right() - 28.0 - 30.0, row.y, 30.0, row.h), 11.0, SEMIBOLD, t.subtext, Align::Right);
             let mute = Rect::new(row.right() - 26.0, row.cy() - 13.0, 26.0, 26.0);
             if ui.icon_button(mute, if muted { "SpeakerMuted" } else { "Speaker" }, 13.0, if muted { color(BAD, 1.0) } else { t.subtext }) {
                 let (pid, m) = (ses.pid, !muted);
@@ -597,9 +597,9 @@ fn switch(ui: &mut Ui, sid: u64, r: Rect, on: bool) -> bool {
 
 /// Note text (11.5, wrapped, margin 6,8,6,4). Returns its height with margins.
 fn note(ui: &mut Ui, text: &str, x: f32, y: f32, w: f32) -> f32 {
-    let lines = (ui.measure(text, 11.5, REGULAR) / (w - 12.0)).ceil().max(1.0);
+    let lines = (ui.measure(text, 11.0, REGULAR) / (w - 12.0)).ceil().max(1.0);
     let h = lines * 15.0;
-    ui.wrap(text, Rect::new(x + 6.0, y + 8.0, w - 12.0, h + 2.0), 11.5, REGULAR, ui.t.subtext);
+    ui.wrap(text, Rect::new(x + 6.0, y + 8.0, w - 12.0, h + 2.0), 11.0, REGULAR, ui.t.subtext);
     h + 12.0
 }
 
@@ -650,11 +650,11 @@ fn detail(ui: &mut Ui, s: &mut State, d: &Data, r: Rect, det: Detail) {
     }
 
     // "More …" link at the bottom (RowButton: 8,5 padding, radius 10).
-    let more_r = Rect::new(inner.x, inner.bottom() - 24.0, ui.measure(more, 11.5, REGULAR) + 16.0, 24.0);
+    let more_r = Rect::new(inner.x, inner.bottom() - 24.0, ui.measure(more, 11.0, REGULAR) + 16.0, 24.0);
     if ui.hit(more_r, 10.0) {
         crate::shell::open_settings_page(uri);
     }
-    ui.text(more, more_r.pad(8.0, 0.0, 0.0, 0.0), 11.5, REGULAR, t.subtext, Align::Left);
+    ui.text(more, more_r.pad(8.0, 0.0, 0.0, 0.0), 11.0, REGULAR, t.subtext, Align::Left);
 
     let list = Rect::new(inner.x, inner.y + 36.0, inner.w, more_r.y - 4.0 - inner.y - 36.0);
     match det {
@@ -820,16 +820,16 @@ fn password_box(ui: &mut Ui, fid: u64, r: Rect) -> Option<String> {
         ui.g.stroke_round(r.inset(0.5, 0.5).d2d(), 6.5, ui.c(with_alpha(t.accent, 0.6)), 1.0);
     }
     let inner = r.pad(9.0, 0.0, 9.0, 0.0);
-    let got = ui.text_field(fid, inner, "Network password", 12.5);
+    let got = ui.text_field(fid, inner, "Network password", 13.0);
     // Cover what the kit drew and show dots instead.
     let text = ui.field_text(fid);
     if !text.is_empty() || got.is_some() {
         ui.fill(r.inset(1.0, 1.0), 6.0, t.surface2);
         let dots: String = "•".repeat(text.chars().count());
-        ui.text(&dots, inner, 12.5, REGULAR, t.text, Align::Left);
+        ui.text(&dots, inner, 12.0, REGULAR, t.text, Align::Left);
         if focused && ui.st.caret_on {
             let caret = ui.st.edits.get(&fid).map_or(0, |e| e.caret);
-            let x = inner.x + ui.measure(&"•".repeat(caret), 12.5, REGULAR);
+            let x = inner.x + ui.measure(&"•".repeat(caret), 12.0, REGULAR);
             ui.g.line(x + 0.5, r.cy() - 7.5, x + 0.5, r.cy() + 7.5, ui.c(t.text), 1.2);
         }
     }

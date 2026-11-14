@@ -21,6 +21,10 @@ How a tool view is built, and the helpers it can use. Keep new tools consistent 
   surface2, hover, stroke, track, text, subtext, accent, on_accent, accent_soft, danger); wrap raw colours with `ui.c(..)`
   when drawing through `ui.g` so the panel fade applies. Weights: `crate::gfx::{LIGHT, REGULAR, MEDIUM, SEMIBOLD, BOLD}`.
   Icons: names from `src/ui/icon_data.rs` (Heroicons solid names like "Trash", "Plus", "Star"; add ".o" for outline).
+- Text sizes come from one scale (DIP); don't use sizes in between:
+  10 badges and tiny chips · 11 captions, meta lines, section labels · 12 secondary text, chips, buttons ·
+  13 body text, list rows, inputs (`text_field` is always 13) · 14 card titles · 17 headings (panel title,
+  big names) · 24 / 34 / 40 display numbers (clocks, time pickers, temperature). Use `lh(size)` with the same size.
 - If the kit lacks a widget, write a private helper in your own view file (don't edit `src/ui/mod.rs`).
 - Data: `crate::services::*` (settings, todos, ticktick, notes, calendar, prayer, weather, media, lyrics, notifications,
   radios, audio, brightness, system, timers, store), `crate::model` (now_playing, lyric_line, lyrics_all, prayer_times,

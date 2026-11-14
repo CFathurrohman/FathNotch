@@ -11,7 +11,7 @@ use crate::services::{notes, settings};
 use crate::ui::{id, Key, Rect, TextEdit, Ui};
 
 const EDITOR: u64 = id("note.editor");
-const SIZE: f32 = 14.0;
+const SIZE: f32 = 13.0;
 const LINE_H: f32 = 18.6;
 /// Autosave this long after the last keystroke (ms).
 const SAVE_AFTER_MS: u64 = 600;
@@ -161,11 +161,11 @@ fn note_list(ui: &mut Ui, s: &mut State, r: Rect) {
     let live = ui.st.edits.get(&EDITOR).map(|e| e.text.clone()).unwrap_or_default();
 
     let head = Rect::new(r.x, r.y, r.w, 30.0);
-    ui.text("NOTES", Rect::new(head.x, head.y, 60.0, head.h), 10.5, BOLD, t.subtext, Align::Left);
+    ui.text("NOTES", Rect::new(head.x, head.y, 60.0, head.h), 11.0, BOLD, t.subtext, Align::Left);
     let count = list.iter().filter(|n| if Some(&n.id) == s.current.as_ref() { !live.trim().is_empty() } else { !n.is_blank() }).count();
     if count > 0 {
-        let x = head.x + ui.measure("NOTES", 10.5, BOLD) + 6.0;
-        ui.text(&count.to_string(), Rect::new(x, head.y, 40.0, head.h), 10.5, REGULAR, t.subtext, Align::Left);
+        let x = head.x + ui.measure("NOTES", 11.0, BOLD) + 6.0;
+        ui.text(&count.to_string(), Rect::new(x, head.y, 40.0, head.h), 11.0, REGULAR, t.subtext, Align::Left);
     }
     let plus = Rect::new(head.right() - 26.0, head.cy() - 13.0, 26.0, 26.0);
     ui.fill(plus, 8.0, if ui.hovered(plus) { t.hover } else { t.accent_soft });
@@ -194,7 +194,7 @@ fn note_list(ui: &mut Ui, s: &mut State, r: Rect) {
             let note = if selected { notes::Note { text: live.clone(), ..n.clone() } } else { n.clone() };
             let tx = row.x + 11.0;
             let tw = row.w - 11.0 - 4.0 - if hov { 24.0 } else { 0.0 };
-            ui.text(note.title(), Rect::new(tx, row.y + 5.0, tw, 17.0), 12.5, SEMIBOLD, t.text, Align::Left);
+            ui.text(note.title(), Rect::new(tx, row.y + 5.0, tw, 17.0), 12.0, SEMIBOLD, t.text, Align::Left);
             ui.text(&note.preview(), Rect::new(tx, row.y + 21.5, tw, 15.0), 11.0, REGULAR, t.subtext, Align::Left);
             ui.text(&n.when(), Rect::new(tx, row.y + 36.5, tw, 13.5), 10.0, REGULAR, with_alpha(t.subtext, 0.75), Align::Left);
             if hov {
@@ -464,6 +464,8 @@ fn editor(ui: &mut Ui, s: &mut State, r: Rect, hit_area: Rect) -> bool {
                     ui.st.focus = 0;
                     s.all_selected = false;
                 }
+                // Tab switching is the shell's (it takes these keys before the tool draws).
+                Key::TabPrev | Key::TabNext | Key::TabAt(_) => {}
             }
             if !vertical {
                 s.goal_x = None;

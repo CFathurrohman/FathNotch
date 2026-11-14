@@ -183,9 +183,9 @@ fn month_card(ui: &mut Ui, s: &mut State, card: Rect) {
     let (y, m, _) = calendar::civil_from_days(s.month);
     let month_name = MONTHS[m as usize - 1];
     let hx = head.x + 2.0;
-    ui.text(month_name, Rect::new(hx, head.y, 160.0, head.h), 14.5, SEMIBOLD, t.text, Align::Left);
-    let mw = ui.measure(month_name, 14.5, SEMIBOLD);
-    ui.text(&y.to_string(), Rect::new(hx + mw + 5.0, head.y, 60.0, head.h), 14.5, SEMIBOLD, t.accent, Align::Left);
+    ui.text(month_name, Rect::new(hx, head.y, 160.0, head.h), 14.0, SEMIBOLD, t.text, Align::Left);
+    let mw = ui.measure(month_name, 14.0, SEMIBOLD);
+    ui.text(&y.to_string(), Rect::new(hx + mw + 5.0, head.y, 60.0, head.h), 14.0, SEMIBOLD, t.accent, Align::Left);
     let next_r = Rect::new(head.right() - 24.0, head.y, 24.0, 24.0);
     let today_r = Rect::new(next_r.x - 24.0, head.y, 24.0, 24.0);
     let prev_r = Rect::new(today_r.x - 24.0, head.y, 24.0, 24.0);
@@ -323,7 +323,7 @@ fn day_panel(ui: &mut Ui, s: &mut State, r: Rect) {
         let tx = head.x + nw + 12.0;
         let dow = DAYS[(calendar::weekday(s.selected) as usize + 1) % 7];
         let month = MONTHS[m as usize - 1];
-        ui.text(if is_today { "Today" } else { dow }, Rect::new(tx, head.y + 2.0, 300.0, 20.0), 15.0, SEMIBOLD, t.text, Align::Left);
+        ui.text(if is_today { "Today" } else { dow }, Rect::new(tx, head.y + 2.0, 300.0, 20.0), 14.0, SEMIBOLD, t.text, Align::Left);
         let count = match items.len() {
             0 => "No events".to_string(),
             1 => "1 event".to_string(),
@@ -332,12 +332,12 @@ fn day_panel(ui: &mut Ui, s: &mut State, r: Rect) {
         let sub = if is_today { format!("{dow}, {month} {d} · {count}") } else { format!("{month} {d}, {y} · {count}") };
         ui.text(&sub, Rect::new(tx, head.y + 22.0, 320.0, 18.0), 12.0, REGULAR, t.subtext, Align::Left);
         if !is_today {
-            let cw = ui.measure("Today", 11.5, SEMIBOLD) + 35.0;
+            let cw = ui.measure("Today", 11.0, SEMIBOLD) + 35.0;
             let chip = Rect::new(head.right() - cw, head.cy() - 11.0, cw, 22.0);
             let hov = ui.hovered(chip);
             ui.fill(chip, 11.0, if hov { with_alpha(t.accent_soft, 0.8) } else { t.accent_soft });
             ui.icon("ChevronLeft", chip.x + 15.0, chip.cy(), 10.0, t.accent);
-            ui.text("Today", Rect::new(chip.x + 23.0, chip.y, cw - 23.0, chip.h), 11.5, SEMIBOLD, t.accent, Align::Left);
+            ui.text("Today", Rect::new(chip.x + 23.0, chip.y, cw - 23.0, chip.h), 11.0, SEMIBOLD, t.accent, Align::Left);
             if ui.clicked(chip) {
                 go_today(s);
             }
@@ -348,7 +348,7 @@ fn day_panel(ui: &mut Ui, s: &mut State, r: Rect) {
             ui.g.fill_circle(list.cx(), cy - 18.0, 18.0, ui.c(t.accent_soft));
             ui.icon("CalendarDays", list.cx(), cy - 18.0, 16.0, t.accent);
             ui.text("No events", Rect::new(list.x, cy + 7.0, list.w, 18.0), 13.0, SEMIBOLD, t.text, Align::Center);
-            ui.text("Add one below", Rect::new(list.x, cy + 24.0, list.w, 16.0), 11.5, REGULAR, t.subtext, Align::Center);
+            ui.text("Add one below", Rect::new(list.x, cy + 24.0, list.w, 16.0), 11.0, REGULAR, t.subtext, Align::Center);
         } else {
             agenda(ui, s, list, &items, is_today);
         }
@@ -402,13 +402,13 @@ fn agenda(ui: &mut Ui, s: &mut State, list: Rect, items: &[Item], is_today: bool
             if is_next {
                 let (h, m) = it.time.unwrap_or((0, 0));
                 let label = format!("UP NEXT · {}", next_label((h * 60 + m) as i64 - now_min));
-                let w = ui.measure(&label, 10.5, BOLD) + 14.0;
+                let w = ui.measure(&label, 11.0, BOLD) + 14.0;
                 let chip = Rect::new(right - 2.0 - w, card.cy() - 9.0, w, 18.0);
                 right = chip.x - 8.0;
                 ui.fill(chip, 8.0, t.accent_soft);
-                ui.text(&label, chip, 10.5, BOLD, t.accent, Align::Center);
+                ui.text(&label, chip, 11.0, BOLD, t.accent, Align::Center);
             }
-            ui.text(&it.title, Rect::new(card.x + 11.0, card.y, right - card.x - 11.0, card.h), 13.5, REGULAR, t.text, Align::Left);
+            ui.text(&it.title, Rect::new(card.x + 11.0, card.y, right - card.x - 11.0, card.h), 12.0, REGULAR, t.text, Align::Left);
             ui.alpha = base;
         }
     });
@@ -592,7 +592,7 @@ fn picker(ui: &mut Ui, s: &mut State, area: Rect) {
         let label = if s.picking_minutes { format!("{:02}", i * 5) } else { (if i == 0 { 12 } else { i }).to_string() };
         let on = (i as f32 - slot).abs() < 0.01;
         let lr = Rect::new(cx + DIAL_RADIUS * an.sin() - 15.0, cy - DIAL_RADIUS * an.cos() - 9.0, 30.0, 18.0);
-        ui.text(&label, lr, 12.5, if on { SEMIBOLD } else { REGULAR }, if on { t.on_accent } else { t.text }, Align::Center);
+        ui.text(&label, lr, 12.0, if on { SEMIBOLD } else { REGULAR }, if on { t.on_accent } else { t.text }, Align::Center);
     }
 
     // Read-out: HH : MM  AM/PM, hint, buttons.
@@ -601,15 +601,15 @@ fn picker(ui: &mut Ui, s: &mut State, area: Rect) {
     let hour12 = if s.pick_hour % 12 == 0 { 12 } else { s.pick_hour % 12 };
     let hh = format!("{hour12:02}");
     let mm = format!("{:02}", s.pick_minute);
-    let hw = ui.measure(&hh, 38.0, LIGHT);
-    let cw = ui.measure(":", 38.0, LIGHT);
-    let mw = ui.measure(&mm, 38.0, LIGHT);
+    let hw = ui.measure(&hh, 34.0, LIGHT);
+    let cw = ui.measure(":", 34.0, LIGHT);
+    let mw = ui.measure(&mm, 34.0, LIGHT);
     let hr = Rect::new(x, y, hw + 2.0, 48.0);
     let colon = Rect::new(hr.right() + 2.0, y, cw + 2.0, 46.0);
     let mr = Rect::new(colon.right() + 2.0, y, mw + 2.0, 48.0);
-    ui.text(&hh, hr, 38.0, LIGHT, if s.picking_minutes { t.subtext } else { t.accent }, Align::Left);
-    ui.text(":", colon, 38.0, LIGHT, t.subtext, Align::Left);
-    ui.text(&mm, mr, 38.0, LIGHT, if s.picking_minutes { t.accent } else { t.subtext }, Align::Left);
+    ui.text(&hh, hr, 34.0, LIGHT, if s.picking_minutes { t.subtext } else { t.accent }, Align::Left);
+    ui.text(":", colon, 34.0, LIGHT, t.subtext, Align::Left);
+    ui.text(&mm, mr, 34.0, LIGHT, if s.picking_minutes { t.accent } else { t.subtext }, Align::Left);
     if ui.clicked(hr) {
         s.picking_minutes = false;
     }

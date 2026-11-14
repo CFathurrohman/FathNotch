@@ -24,7 +24,7 @@ pub struct State {
     /// When Home was last opened (the cards rise in, staggered).
     shown_at: f64,
     /// Today's events and open to-dos, re-read every couple of seconds (not every frame).
-    lists: Option<(Instant, Vec<(String, String)>, Vec<String>, usize)>,
+    lists: Option<(Instant, Vec<Row>)>,
     /// Blurred-art backdrop baked for (art id, surface colour, card size): BMP bytes, made off the UI thread.
     backdrop: Arc<Mutex<Option<(u64, Vec<u8>)>>>,
     backdrop_for: u64,
@@ -48,26 +48,36 @@ fn first_name() -> String {
     }
 }
 
+/// One line of the Today card: a calendar event, or an open to-do.
+#[derive(Clone)]
+struct Row {
+    title: String,
+    /// "09:30" / "All day" for today's events and to-dos due today; None for other open to-dos.
+    when: Option<String>,
+    todo: bool,
+}
+
 fn refresh_lists(s: &mut State) {
     if s.lists.as_ref().is_some_and(|(t, ..)| t.elapsed().as_secs_f32() < 2.0) {
         return;
     }
+    let hhmm = |t: Option<(u32, u32)>| t.map_or("All day".to_string(), |(h, m)| format!("{h:02}:{m:02}"));
+    // Today's schedule: events and to-dos due today, all-day first, then by time.
     let (y, m, d) = calendar::today();
-    let mut items: Vec<(String, String)> = calendar::on_day(y, m, d)
-        .into_iter()
-        .map(|e| (e.title.clone(), e.time.map_or("All day".to_string(), |(h, mi)| format!("{h:02}:{mi:02}"))))
-        .collect();
+    let mut today: Vec<(Option<(u32, u32)>, Row)> =
+        calendar::on_day(y, m, d).into_iter().map(|e| (e.time.map(|(h, m)| (h as u32, m as u32)), Row { title: e.title.clone(), when: None, todo: false })).collect();
     let all = todos::all();
     for td in all.iter().filter(|x| !x.done && x.due_today()) {
-        let when = td.due_local().filter(|_| !td.due_all_day).map_or("All day".to_string(), |(_, _, _, h, mi)| format!("{h:02}:{mi:02}"));
-        items.push((format!("To-do · {}", td.text), when));
+        let at = td.due_local().filter(|_| !td.due_all_day).map(|(_, _, _, h, mi)| (h as u32, mi as u32));
+        today.push((at, Row { title: td.text.clone(), when: None, todo: true }));
     }
-    // C#: open to-dos, starred first.
-    let mut open: Vec<&todos::Todo> = all.iter().filter(|x| !x.done).collect();
+    today.sort_by_key(|(at, _)| *at);
+    let mut rows: Vec<Row> = today.into_iter().map(|(at, r)| Row { when: Some(hhmm(at)), ..r }).collect();
+    // Then the other open to-dos (no date, or another day), starred first.
+    let mut open: Vec<&todos::Todo> = all.iter().filter(|x| !x.done && !x.due_today()).collect();
     open.sort_by_key(|x| !x.starred);
-    let count = open.len();
-    let open: Vec<String> = open.into_iter().take(2).map(|x| x.text.clone()).collect();
-    s.lists = Some((Instant::now(), items, open, count));
+    rows.extend(open.into_iter().map(|x| Row { title: x.text.clone(), when: None, todo: true }));
+    s.lists = Some((Instant::now(), rows));
 }
 
 /// Cards fade in and rise 8 px over 320 ms, each `delay` later (C# Rise).
@@ -91,17 +101,13 @@ pub fn draw(ui: &mut Ui, s: &mut State, r: Rect, go: &mut Option<&'static str>) 
 
     let base_alpha = ui.alpha;
     let (left, right) = rest.take_left(CARD_W, 12.0);
-    let rows = right.rows(2, 10.0);
 
     let (a, dy) = rise(ui, s, 0.0);
     ui.alpha = base_alpha * a;
     now_playing_card(ui, s, shifted(left, dy), go);
     let (a, dy) = rise(ui, s, 0.06);
     ui.alpha = base_alpha * a;
-    today_card(ui, s, shifted(rows[0], dy), go);
-    let (a, dy) = rise(ui, s, 0.12);
-    ui.alpha = base_alpha * a;
-    reminders_card(ui, s, shifted(rows[1], dy), go);
+    today_card(ui, s, shifted(right, dy), go);
     ui.alpha = base_alpha;
 }
 
@@ -117,7 +123,7 @@ fn header(ui: &mut Ui, top: Rect, go: &mut Option<&'static str>) {
     let ring = if ui.hovered(av) { 1.0 } else { 0.7 };
     ui.g.stroke_circle(av.cx(), av.cy(), 19.2, ui.c(with_alpha(t.accent, ring)), 1.6);
     ui.g.fill_circle(av.cx(), av.cy(), 16.0, ui.c(t.accent_soft));
-    ui.text(&name.chars().next().unwrap_or('?').to_uppercase().to_string(), av, 15.0, SEMIBOLD, t.accent, Align::Center);
+    ui.text(&name.chars().next().unwrap_or('?').to_uppercase().to_string(), av, 14.0, SEMIBOLD, t.accent, Align::Center);
 
     // Greeting (icon + caps line) over the name, centred on the avatar.
     let part = match n.hour {
@@ -129,14 +135,14 @@ fn header(ui: &mut Ui, top: Rect, go: &mut Option<&'static str>) {
     let gx = av.right() + 12.0;
     let gy = av.cy() - 17.5;
     ui.icon(if (6..18).contains(&n.hour) { "Sun" } else { "Moon" }, gx + 5.5, gy + 6.5, 11.0, t.accent);
-    ui.text(&format!("GOOD {part}"), Rect::new(gx + 16.0, gy, 240.0, 13.0), 10.5, BOLD, t.accent, Align::Left);
-    ui.text(&name, Rect::new(gx, gy + 13.0, 320.0, 22.0), 18.0, SEMIBOLD, t.text, Align::Left);
+    ui.text(&format!("GOOD {part}"), Rect::new(gx + 16.0, gy, 240.0, 13.0), 11.0, BOLD, t.accent, Align::Left);
+    ui.text(&name, Rect::new(gx, gy + 13.0, 320.0, 22.0), 17.0, SEMIBOLD, t.text, Align::Left);
 
     // Right: weather pill, date pill, divider, clock.
     let time = format!("{:02}:{:02}", n.hour, n.minute);
-    let cw = ui.measure(&time, 26.0, LIGHT) + 2.0;
+    let cw = ui.measure(&time, 24.0, LIGHT) + 2.0;
     let clock_r = Rect::new(top.right() - cw, top.y, cw, top.h);
-    ui.text(&time, clock_r, 26.0, LIGHT, t.text, Align::Right);
+    ui.text(&time, clock_r, 24.0, LIGHT, t.text, Align::Right);
     let div_x = clock_r.x - 14.0 - 1.0;
     ui.fill(Rect::new(div_x, top.cy() - 11.0, 1.0, 22.0), 0.0, t.stroke);
 
@@ -320,8 +326,8 @@ fn now_playing_card(ui: &mut Ui, s: &mut State, r: Rect, go: &mut Option<&'stati
         Some(p) => (p.title.clone(), [p.artist.as_str(), p.app.as_str()].iter().filter(|s| !s.trim().is_empty()).cloned().collect::<Vec<_>>().join(" · ")),
         None => ("Nothing playing".to_string(), String::new()),
     };
-    ui.text(&title, Rect::new(x, inner.y + 14.0, w - 28.0, 19.0), 15.5, SEMIBOLD, t.text, Align::Left);
-    ui.text(&by, Rect::new(x, inner.y + 33.0, w - 28.0, 16.0), 12.5, REGULAR, t.subtext, Align::Left);
+    ui.text(&title, Rect::new(x, inner.y + 14.0, w - 28.0, 19.0), 14.0, SEMIBOLD, t.text, Align::Left);
+    ui.text(&by, Rect::new(x, inner.y + 33.0, w - 28.0, 16.0), 12.0, REGULAR, t.subtext, Align::Left);
 
     // Controls row (40) at the bottom; progress + times (4 + 3 + 13 + 4) above it.
     let row_y = inner.bottom() - 40.0;
@@ -431,7 +437,7 @@ fn widget(ui: &mut Ui, r: Rect, icon: &'static str, title: &str, count: usize) -
     let tile = Rect::new(row.x + 8.0, row.y + 5.0, 22.0, 22.0);
     ui.fill(tile, 6.0, t.accent_soft);
     ui.icon(icon, tile.cx(), tile.cy(), 13.0, t.accent);
-    ui.text(title, Rect::new(tile.right() + 8.0, tile.y, 160.0, tile.h), 13.5, SEMIBOLD, t.text, Align::Left);
+    ui.text(title, Rect::new(tile.right() + 8.0, tile.y, 160.0, tile.h), 13.0, SEMIBOLD, t.text, Align::Left);
     if count > 0 {
         let c = count.to_string();
         let cw = (ui.measure(&c, 11.0, SEMIBOLD) + 14.0).max(20.0);
@@ -442,41 +448,54 @@ fn widget(ui: &mut Ui, r: Rect, icon: &'static str, title: &str, count: usize) -
     ui.clicked(row)
 }
 
+/// Today: today's events and to-dos due today (with their time), then the other open to-dos, each once.
+/// The header opens Calendar; an event row opens Calendar, a to-do row opens To-Dos.
 fn today_card(ui: &mut Ui, s: &State, r: Rect, go: &mut Option<&'static str>) {
     let t = ui.t;
-    let items = s.lists.as_ref().map(|l| l.1.clone()).unwrap_or_default();
-    if widget(ui, r, "CalendarDays", "Today", items.len()) {
-        *go = Some("calendar");
-    }
-    let x = r.x + 15.0;
-    if items.is_empty() {
-        ui.text("Nothing scheduled", Rect::new(x, r.y + 40.0, r.w - 28.0, 16.0), 12.0, REGULAR, t.subtext, Align::Left);
-    }
-    for (i, (title, when)) in items.iter().take(2).enumerate() {
-        let row = Rect::new(x, r.y + 39.0 + i as f32 * 18.0, r.right() - 13.0 - x, 18.0);
-        ui.fill(Rect::new(row.x, row.cy() - 7.0, 3.0, 14.0), 1.5, t.accent);
-        let tw = ui.measure(when, 11.5, REGULAR);
-        ui.text(title, Rect::new(row.x + 11.0, row.y, row.w - 11.0 - tw - 8.0, row.h), 13.0, REGULAR, t.text, Align::Left);
-        ui.text(when, Rect::new(row.right() - tw - 2.0, row.y, tw + 2.0, row.h), 11.5, REGULAR, t.subtext, Align::Right);
-    }
-}
-
-fn reminders_card(ui: &mut Ui, s: &State, r: Rect, go: &mut Option<&'static str>) {
-    let t = ui.t;
-    let (open, count) = s.lists.as_ref().map(|l| (l.2.clone(), l.3)).unwrap_or_default();
-    if widget(ui, r, "ListBullet", "Reminders", count) {
-        *go = Some("todos");
-    }
-    let x = r.x + 15.0;
-    if open.is_empty() {
+    let rows = s.lists.as_ref().map(|l| l.1.clone()).unwrap_or_default();
+    const ROW_H: f32 = 19.0;
+    let x = r.x + 9.0;
+    let w = r.w - 22.0;
+    let top = r.y + 38.0;
+    let fit = (((r.bottom() - 8.0 - top) / ROW_H).floor() as usize).max(1);
+    let (shown, more) = if rows.len() > fit { (fit - 1, rows.len() - (fit - 1)) } else { (rows.len(), 0) };
+    let header = widget(ui, r, "CalendarDays", "Today", rows.len());
+    if rows.is_empty() {
         let good = color(0x32D74B, 1.0);
-        ui.icon("Check", x + 6.0, r.y + 48.0, 12.0, good);
-        ui.text("All done", Rect::new(x + 18.0, r.y + 40.0, r.w - 40.0, 16.0), 12.0, REGULAR, t.subtext, Align::Left);
+        ui.icon("Check", x + 12.0, top + ROW_H / 2.0, 12.0, good);
+        ui.text("Nothing scheduled, no open to-dos", Rect::new(x + 24.0, top, w - 24.0, ROW_H), 12.0, REGULAR, t.subtext, Align::Left);
     }
-    for (i, text) in open.iter().enumerate() {
-        let row = Rect::new(x, r.y + 39.0 + i as f32 * 18.0, r.right() - 13.0 - x, 18.0);
-        ui.g.stroke_circle(row.x + 6.0, row.cy(), 5.35, ui.c(t.subtext), 1.3);
-        ui.text(text, Rect::new(row.x + 20.0, row.y, (row.w - 20.0).min(200.0), row.h), 13.0, REGULAR, t.text, Align::Left);
+    for (i, row) in rows.iter().take(shown).enumerate() {
+        let rr = Rect::new(x, top + i as f32 * ROW_H, w, ROW_H);
+        if ui.hovered(rr) {
+            ui.fill(rr, 7.0, t.surface2);
+        }
+        let mx = rr.x + 12.0;
+        if row.todo {
+            ui.g.stroke_circle(mx, rr.cy(), 5.0, ui.c(t.subtext), 1.3);
+        } else {
+            ui.fill(Rect::new(mx - 1.5, rr.cy() - 7.0, 3.0, 14.0), 1.5, t.accent);
+        }
+        let tw = row.when.as_deref().map_or(0.0, |s| ui.measure(s, 11.0, REGULAR));
+        let tx = mx + 12.0;
+        ui.text(&row.title, Rect::new(tx, rr.y, rr.right() - 8.0 - tw - 8.0 - tx, rr.h), 12.0, REGULAR, t.text, Align::Left);
+        if let Some(when) = &row.when {
+            ui.text(when, Rect::new(rr.right() - 8.0 - tw - 2.0, rr.y, tw + 2.0, rr.h), 11.0, REGULAR, t.subtext, Align::Right);
+        }
+        if ui.clicked(rr) {
+            *go = Some(if row.todo { "todos" } else { "calendar" });
+        }
+    }
+    if more > 0 {
+        let rr = Rect::new(x, top + shown as f32 * ROW_H, w, ROW_H);
+        let label = format!("+{more} more");
+        ui.text(&label, Rect::new(rr.x + 24.0, rr.y, rr.w - 24.0, rr.h), 11.0, REGULAR, t.subtext, Align::Left);
+        if ui.clicked(rr) {
+            *go = Some("todos");
+        }
+    }
+    if header {
+        *go = Some("calendar");
     }
 }
 

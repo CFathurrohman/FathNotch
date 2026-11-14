@@ -154,7 +154,7 @@ fn mini_card(ui: &mut Ui, r: Rect, icon: &'static str, label: &str) -> Rect {
 }
 
 fn big(ui: &mut Ui, inner: Rect, value: &str) {
-    ui.text(value, Rect::new(inner.x, inner.y + 20.0, inner.w, 27.0), 20.0, SEMIBOLD, ui.t.text, Align::Left);
+    ui.text(value, Rect::new(inner.x, inner.y + 20.0, inner.w, 27.0), 17.0, SEMIBOLD, ui.t.text, Align::Left);
 }
 
 fn sub(ui: &mut Ui, inner: Rect, value: &str) {
@@ -301,15 +301,15 @@ fn apps(ui: &mut Ui, s: &mut State, r: Rect) {
     let cpu = if first { "CPU …".to_string() } else { format!("CPU {cpu_total:.0}%") };
     let mem = mem_pct.map_or("Memory".to_string(), |m| format!("Memory {m:.0}%"));
     let mut x = head.x;
-    let w = ui.measure(&cpu, 12.5, SEMIBOLD);
-    ui.text(&cpu, Rect::new(x, head.y, w + 4.0, head.h), 12.5, SEMIBOLD, t.text, Align::Left);
+    let w = ui.measure(&cpu, 12.0, SEMIBOLD);
+    ui.text(&cpu, Rect::new(x, head.y, w + 4.0, head.h), 12.0, SEMIBOLD, t.text, Align::Left);
     x += w;
     let sep = "  ·  ";
-    let w = ui.measure(sep, 12.5, SEMIBOLD);
-    ui.text(sep, Rect::new(x, head.y, w + 2.0, head.h), 12.5, SEMIBOLD, t.subtext, Align::Left);
+    let w = ui.measure(sep, 12.0, SEMIBOLD);
+    ui.text(sep, Rect::new(x, head.y, w + 2.0, head.h), 12.0, SEMIBOLD, t.subtext, Align::Left);
     x += w;
-    let w = ui.measure(&mem, 12.5, SEMIBOLD);
-    ui.text(&mem, Rect::new(x, head.y, w + 4.0, head.h), 12.5, SEMIBOLD, t.text, Align::Left);
+    let w = ui.measure(&mem, 12.0, SEMIBOLD);
+    ui.text(&mem, Rect::new(x, head.y, w + 4.0, head.h), 12.0, SEMIBOLD, t.text, Align::Left);
     x += w + 10.0;
 
     // Sort chips and the Task Manager arrow.
@@ -319,7 +319,7 @@ fn apps(ui: &mut Ui, s: &mut State, r: Rect) {
     }
     let mut cx = arrow.x - 4.0;
     for (sort, label) in [(Sort::Name, "Name"), (Sort::Memory, "Memory"), (Sort::Cpu, "CPU")] {
-        let cw = ui.measure(label, 11.5, SEMIBOLD) + 20.0;
+        let cw = ui.measure(label, 11.0, SEMIBOLD) + 20.0;
         cx -= cw + 4.0;
         let c = Rect::new(cx, head.cy() - 13.0, cw, 26.0);
         let on = s.sort == sort;
@@ -329,13 +329,13 @@ fn apps(ui: &mut Ui, s: &mut State, r: Rect) {
         } else if hov {
             ui.fill(c, 8.0, t.surface2);
         }
-        ui.text(label, c, 11.5, SEMIBOLD, if on { t.text } else { t.subtext }, Align::Center);
+        ui.text(label, c, 11.0, SEMIBOLD, if on { t.text } else { t.subtext }, Align::Center);
         if ui.clicked(c) {
             s.sort = sort;
         }
     }
     let count = message.unwrap_or_else(|| format!("{} apps", procs.len()));
-    ui.text(&count, Rect::new(x, head.y, (cx - 8.0 - x).max(0.0), head.h), 11.5, REGULAR, t.subtext, Align::Left);
+    ui.text(&count, Rect::new(x, head.y, (cx - 8.0 - x).max(0.0), head.h), 11.0, REGULAR, t.subtext, Align::Left);
 
     // Column captions (margin 10,6,14,4).
     let (caps_r, list) = rest.take_top(6.0 + 14.0 + 4.0, 0.0);
@@ -387,7 +387,7 @@ fn apps(ui: &mut Ui, s: &mut State, r: Rect) {
                 ui.icon("Cpu", ic.cx(), ic.cy(), 14.0, t.subtext);
             }
             let name = if p.pids.len() > 1 { format!("{}  ({})", p.title, p.pids.len()) } else { p.title.clone() };
-            ui.text(&name, cols.name, 12.5, REGULAR, t.text, Align::Left);
+            ui.text(&name, cols.name, 12.0, REGULAR, t.text, Align::Left);
             let cpu_c = if p.cpu >= 25.0 { t.danger } else if p.cpu >= 5.0 { t.text } else { t.subtext };
             ui.text(&if first { "…".to_string() } else { format!("{:.1}%", p.cpu) }, cols.cpu, 12.0, SEMIBOLD, cpu_c, Align::Right);
             ui.text(&mem_text(p.mem), cols.mem, 12.0, SEMIBOLD, if p.mem >= 1 << 30 { t.text } else { t.subtext }, Align::Right);

@@ -212,8 +212,8 @@ fn sidebar(ui: &mut Ui, s: &mut State, r: Rect, items: &[Todo]) {
         }
         let fg = if selected || hov { t.text } else { t.subtext };
         ui.icon(icon, row.x + 17.0, row.cy(), 14.0, fg);
-        ui.text(label, Rect::new(row.x + 33.0, row.y, row.w - 70.0, row.h), 12.5, SEMIBOLD, fg, Align::Left);
-        ui.text(&count.to_string(), Rect::new(row.right() - 50.0, row.y, 40.0, row.h), 11.5, REGULAR, t.subtext, Align::Right);
+        ui.text(label, Rect::new(row.x + 33.0, row.y, row.w - 70.0, row.h), 12.0, SEMIBOLD, fg, Align::Left);
+        ui.text(&count.to_string(), Rect::new(row.right() - 50.0, row.y, 40.0, row.h), 11.0, REGULAR, t.subtext, Align::Right);
         if ui.clicked(row) && s.filter != f {
             s.filter = f;
             if f == Filter::Starred && s.new_priority < 5 {
@@ -245,7 +245,7 @@ fn sidebar(ui: &mut Ui, s: &mut State, r: Rect, items: &[Todo]) {
 /// A small chip (hover-tinted pill, 10.5 px text) as the due chips in the composer and rows.
 fn due_chip(ui: &mut Ui, right: f32, cy: f32, label: &str, icon: bool, fg: crate::gfx::Color) -> Rect {
     let t = ui.t;
-    let tw = ui.measure(label, 10.5, REGULAR);
+    let tw = ui.measure(label, 11.0, REGULAR);
     let w = tw + 14.0 + if icon { 16.0 } else { 0.0 };
     let r = Rect::new(right - w, cy - 9.5, w, 19.0);
     ui.fill(r, 6.0, t.hover);
@@ -254,7 +254,7 @@ fn due_chip(ui: &mut Ui, right: f32, cy: f32, label: &str, icon: bool, fg: crate
         ui.icon("CalendarDays", x + 5.5, r.cy(), 11.0, t.subtext);
         x += 16.0;
     }
-    ui.text(label, Rect::new(x, r.y, tw + 2.0, r.h), 10.5, REGULAR, fg, Align::Left);
+    ui.text(label, Rect::new(x, r.y, tw + 2.0, r.h), 11.0, REGULAR, fg, Align::Left);
     r
 }
 
@@ -273,7 +273,7 @@ fn main_column(ui: &mut Ui, s: &mut State, r: Rect, items: &[Todo]) {
             _ => "",
         };
     // The chip sits in a row button (8, 5 padding, Surface2 on hover).
-    let chip_w = ui.measure(&label, 10.5, REGULAR) + 30.0;
+    let chip_w = ui.measure(&label, 11.0, REGULAR) + 30.0;
     let chip_bg = Rect::new(plus.x - chip_w - 16.0, comp.cy() - 14.5, chip_w + 16.0, 29.0);
     if ui.hovered(chip_bg) {
         ui.fill(chip_bg, 10.0, t.surface2);
@@ -285,7 +285,7 @@ fn main_column(ui: &mut Ui, s: &mut State, r: Rect, items: &[Todo]) {
     }
     let field_id = id("todos.input");
     let field = Rect::new(comp.x + 12.0, comp.y, chip.x - comp.x - 24.0, comp.h);
-    let submitted = ui.text_field(field_id, field, "Add a to-do, press Enter", 13.5);
+    let submitted = ui.text_field(field_id, field, "Add a to-do, press Enter", 13.0);
     let mut add_text = submitted;
     if ui.icon_button(plus, "Plus", 15.0, t.accent) {
         let typed = ui.field_text(field_id);
@@ -328,7 +328,7 @@ fn main_column(ui: &mut Ui, s: &mut State, r: Rect, items: &[Todo]) {
         };
         let cy = list.cy();
         ui.icon(icon, list.cx(), cy - 12.0, 22.0, with_alpha(t.subtext, 0.6));
-        ui.text(text, Rect::new(list.x, cy + 2.0, list.w, 20.0), 12.5, REGULAR, t.subtext, Align::Center);
+        ui.text(text, Rect::new(list.x, cy + 2.0, list.w, 20.0), 12.0, REGULAR, t.subtext, Align::Center);
         return;
     }
     let row_h = 38.0;
@@ -412,9 +412,9 @@ fn todo_row(ui: &mut Ui, card: Rect, item: &Todo) -> Option<String> {
     let tx = card.x + 10.0 + 28.0;
     let tr = Rect::new(tx, card.y, (text_right - 8.0 - tx).max(0.0), card.h);
     let fg = if item.done { t.subtext } else { t.text };
-    ui.text(&item.text, tr, 13.0, REGULAR, with_alpha(fg, alpha), Align::Left);
+    ui.text(&item.text, tr, 12.0, REGULAR, with_alpha(fg, alpha), Align::Left);
     if item.done {
-        let w = ui.measure(&item.text, 13.0, REGULAR).min(tr.w);
+        let w = ui.measure(&item.text, 12.0, REGULAR).min(tr.w);
         ui.g.line(tx, card.cy() + 0.5, tx + w, card.cy() + 0.5, ui.c(with_alpha(fg, alpha)), 1.0);
     }
     clicked_due
@@ -425,7 +425,7 @@ fn todo_row(ui: &mut Ui, card: Rect, item: &Todo) -> Option<String> {
 /// A selectable pill (11.5 px semibold), optionally with a coloured dot; returns (rect, clicked).
 fn pill(ui: &mut Ui, x: f32, y: f32, label: &str, selected: bool, dot: Option<u32>) -> (Rect, bool) {
     let t = ui.t;
-    let tw = ui.measure(label, 11.5, SEMIBOLD);
+    let tw = ui.measure(label, 11.0, SEMIBOLD);
     let w = tw + 18.0 + if dot.is_some() { 12.0 } else { 0.0 };
     let r = Rect::new(x, y, w, 23.0);
     let hov = ui.hovered(r);
@@ -436,7 +436,7 @@ fn pill(ui: &mut Ui, x: f32, y: f32, label: &str, selected: bool, dot: Option<u3
         ui.g.fill_circle(tx + 3.5, r.cy(), 3.5, ui.c(color(c, 1.0)));
         tx += 12.0;
     }
-    ui.text(label, Rect::new(tx, r.y, tw + 2.0, r.h), 11.5, SEMIBOLD, if selected { t.text } else { t.subtext }, Align::Left);
+    ui.text(label, Rect::new(tx, r.y, tw + 2.0, r.h), 11.0, SEMIBOLD, if selected { t.text } else { t.subtext }, Align::Left);
     let clicked = ui.clicked(r);
     (r, clicked)
 }
@@ -493,11 +493,11 @@ fn due_panel(ui: &mut Ui, s: &mut State, r: Rect, items: &[Todo]) {
     }
 
     // Header: what's being dated, and Done.
-    let done_w = ui.measure("Done", 11.5, SEMIBOLD) + 24.0;
+    let done_w = ui.measure("Done", 11.0, SEMIBOLD) + 24.0;
     let done_r = Rect::new(inner.right() - done_w, inner.y, done_w, 26.0);
     let hov = ui.hovered(done_r);
     ui.fill(done_r, 8.0, with_alpha(t.accent, if hov { 0.85 } else { 1.0 }));
-    ui.text("Done", done_r, 11.5, SEMIBOLD, t.on_accent, Align::Center);
+    ui.text("Done", done_r, 11.0, SEMIBOLD, t.on_accent, Align::Center);
     if ui.clicked(done_r) {
         s.panel = None;
         s.clock = None;
@@ -538,7 +538,7 @@ fn due_panel(ui: &mut Ui, s: &mut State, r: Rect, items: &[Todo]) {
         }
         let (_, _, dnum) = civil_from_days(day);
         let name = &DAYS[dow(day)][..2];
-        ui.text(name, Rect::new(cell.x, cell.y + 3.0, cell.w, 13.0), 9.5, REGULAR, if selected { t.on_accent } else { t.subtext }, Align::Center);
+        ui.text(name, Rect::new(cell.x, cell.y + 3.0, cell.w, 13.0), 10.0, REGULAR, if selected { t.on_accent } else { t.subtext }, Align::Center);
         ui.text(
             &dnum.to_string(),
             Rect::new(cell.x, cell.y + 15.0, cell.w, 16.0),

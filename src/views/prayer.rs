@@ -124,7 +124,7 @@ pub fn draw(ui: &mut Ui, s: &mut State, r: Rect, go: &mut Option<&'static str>) 
             ("Set your city to see today's prayer times", "Open settings")
         };
         ui.text(msg, Rect::new(r.x, r.cy() - 26.0, r.w, 20.0), 14.0, SEMIBOLD, t.text, Align::Center);
-        let bw = ui.measure(label, 12.5, SEMIBOLD) + 32.0;
+        let bw = ui.measure(label, 12.0, SEMIBOLD) + 32.0;
         if ui.button(Rect::new(r.cx() - bw / 2.0, r.cy() + 6.0, bw, 30.0), label, ButtonStyle::Accent) {
             if !st.prayer_enabled {
                 settings::update(|x| x.prayer_enabled = true);
@@ -182,8 +182,8 @@ fn summary(ui: &mut Ui, r: Rect, line: &[Slot], now: f64, intro: f32) {
     ui.text(NAMES[next.0], Rect::new(r.x - 1.0, y0 + 40.0 + dy, r.w, 42.0), 34.0, BOLD, t.text, Align::Left);
     let dy = rise(ui, 3);
     let at = prayer::hhmm(next.1);
-    let tw = ui.measure(&at, 18.0, SEMIBOLD);
-    ui.text(&at, Rect::new(r.x, y0 + 84.0 + dy, tw + 4.0, 24.0), 18.0, SEMIBOLD, t.text, Align::Left);
+    let tw = ui.measure(&at, 17.0, SEMIBOLD);
+    ui.text(&at, Rect::new(r.x, y0 + 84.0 + dy, tw + 4.0, 24.0), 17.0, SEMIBOLD, t.text, Align::Left);
     ui.text(&format!("in {}", span(next.1 - now)), Rect::new(r.x + tw + 12.0, y0 + 85.0 + dy, r.w - tw - 12.0, 24.0), 14.0, SEMIBOLD, t.accent, Align::Left);
     let dy = rise(ui, 4);
     // Progress from the prayer we're in to the next one.

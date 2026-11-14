@@ -140,6 +140,11 @@ pub enum Key {
     Copy,
     Paste,
     Cut,
+    /// Ctrl+← / Ctrl+→: previous / next tab (handled by the shell, never seen by tools).
+    TabPrev,
+    TabNext,
+    /// Ctrl+1…9: that tab.
+    TabAt(u8),
 }
 
 #[derive(Default)]
@@ -342,7 +347,7 @@ impl<'a> Ui<'a> {
             ButtonStyle::Ghost => (if hov { self.t.hover } else { gfx::color(0, 0.0) }, self.t.text),
         };
         self.fill(r, 8.0, bg);
-        self.text(label, r, 12.5, SEMIBOLD, fg, Align::Center);
+        self.text(label, r, 12.0, SEMIBOLD, fg, Align::Center);
         self.clicked(r)
     }
 

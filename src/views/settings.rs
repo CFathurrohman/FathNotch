@@ -235,7 +235,7 @@ pub fn draw(ui: &mut Ui, s: &mut State, r: Rect, _go: &mut Option<&'static str>)
             if !p.any_match {
                 let msg = format!("No settings match \"{}\".", p.search.clone().unwrap_or_default());
                 let sub = p.ui.t.subtext;
-                p.ui.text(&msg, Rect::new(p.x + 4.0, p.y + 8.0, p.w, 18.0), 12.5, SEMIBOLD, sub, Align::Left);
+                p.ui.text(&msg, Rect::new(p.x + 4.0, p.y + 8.0, p.w, 18.0), 12.0, SEMIBOLD, sub, Align::Left);
                 p.y += 26.0;
             }
         } else {
@@ -260,7 +260,7 @@ fn draw_nav(ui: &mut Ui, s: &mut State, r: Rect) {
     ui.icon("Magnifier", sr.x + 18.5, sr.cy(), 15.0, t.subtext);
     let has_text = !ui.field_text(SEARCH_ID).is_empty();
     let text_r = sr.pad(36.0, 0.0, if has_text { 32.0 } else { 10.0 }, 0.0);
-    if let Some(v) = ui.text_field(SEARCH_ID, text_r, "Search settings", 14.0) {
+    if let Some(v) = ui.text_field(SEARCH_ID, text_r, "Search settings", 13.0) {
         ui.set_field_text(SEARCH_ID, &v); // Enter keeps the query
     }
     if has_text {
@@ -274,7 +274,7 @@ fn draw_nav(ui: &mut Ui, s: &mut State, r: Rect) {
     // Version, docked at the bottom.
     let (ver, list) = rest.take_bottom(15.0, 0.0);
     let version = format!("FathNotch {}", env!("CARGO_PKG_VERSION"));
-    ui.text(&version, Rect::new(ver.x + 8.0, ver.y - 2.0, ver.w - 8.0, ver.h), 9.5, REGULAR, t.subtext, Align::Left);
+    ui.text(&version, Rect::new(ver.x + 8.0, ver.y - 2.0, ver.w - 8.0, ver.h), 10.0, REGULAR, t.subtext, Align::Left);
 
     let nav_h = s.nav_h;
     let mut measured = 0.0;
@@ -296,7 +296,7 @@ fn draw_nav(ui: &mut Ui, s: &mut State, r: Rect) {
                 y += 8.0 + 4.0;
             } else {
                 y += 14.0;
-                ui.text(c, Rect::new(list.x + 10.0, y, list.w - 10.0, 14.0), 10.5, BOLD, t.subtext, Align::Left);
+                ui.text(c, Rect::new(list.x + 10.0, y, list.w - 10.0, 14.0), 11.0, BOLD, t.subtext, Align::Left);
                 y += 14.0 + 4.0;
             }
         }
@@ -475,15 +475,15 @@ impl Pg<'_, '_> {
         let tx = self.x + 52.0;
         let tw = self.w - 52.0;
         let lines = wrap_lines(self.ui, subtitle, 12.0, REGULAR, tw);
-        let text_h = lh(20.0) + 1.0 + lines.len() as f32 * lh(12.0);
+        let text_h = lh(17.0) + 1.0 + lines.len() as f32 * lh(12.0);
         let y0 = self.y + 2.0;
         let h = text_h.max(40.0);
         let badge = Rect::new(self.x, y0 + (h - 40.0) / 2.0, 40.0, 40.0);
         self.ui.fill(badge, 13.0, t.accent_soft);
         self.ui.icon(icon, badge.cx(), badge.cy(), 19.0, t.accent);
         let mut y = y0 + (h - text_h) / 2.0;
-        self.ui.text(title, Rect::new(tx, y, tw, lh(20.0)), 20.0, BOLD, t.text, Align::Left);
-        y += lh(20.0) + 1.0;
+        self.ui.text(title, Rect::new(tx, y, tw, lh(17.0)), 17.0, BOLD, t.text, Align::Left);
+        y += lh(17.0) + 1.0;
         for l in &lines {
             self.ui.text(l, Rect::new(tx, y, tw, lh(12.0)), 12.0, REGULAR, t.subtext, Align::Left);
             y += lh(12.0);
@@ -495,7 +495,7 @@ impl Pg<'_, '_> {
     pub fn caption(&mut self, text: &str) {
         let sub = self.ui.t.subtext;
         self.y += 22.0;
-        self.ui.text(text, Rect::new(self.x + 6.0, self.y, self.w, 14.0), 10.5, BOLD, sub, Align::Left);
+        self.ui.text(text, Rect::new(self.x + 6.0, self.y, self.w, 14.0), 11.0, BOLD, sub, Align::Left);
         self.y += 14.0 + 8.0;
     }
 
@@ -568,9 +568,9 @@ impl Pg<'_, '_> {
                 continue;
             }
             let tw = self.w - 2.0 * pad - if r.cw > 0.0 { r.cw + 12.0 } else { 0.0 };
-            let desc = if r.desc.is_empty() { vec![] } else { wrap_lines(self.ui, &r.desc, 11.5, SEMIBOLD, tw) };
+            let desc = if r.desc.is_empty() { vec![] } else { wrap_lines(self.ui, &r.desc, 11.0, SEMIBOLD, tw) };
             let foot = r.foot.as_ref().map_or(vec![], |(f, size, weight)| wrap_lines(self.ui, f, *size, *weight, self.w - 2.0 * pad));
-            let text_h = lh(13.5) + if desc.is_empty() { 0.0 } else { 1.0 + desc.len() as f32 * lh(11.5) };
+            let text_h = lh(13.0) + if desc.is_empty() { 0.0 } else { 1.0 + desc.len() as f32 * lh(11.0) };
             let inner = text_h.max(r.ch).max(30.0);
             let foot_h = r.foot.as_ref().map_or(0.0, |(_, size, _)| 8.0 + foot.len() as f32 * lh(*size));
             let h = 11.0 + inner + foot_h + 11.0;
@@ -609,11 +609,11 @@ impl Pg<'_, '_> {
             let tx = self.x + pad;
             let tw = self.w - 2.0 * pad - if r.cw > 0.0 { r.cw + 12.0 } else { 0.0 };
             let mut ty = y + 11.0 + (l.inner - l.text_h) / 2.0;
-            self.ui.text(&r.title, Rect::new(tx, ty, tw, lh(13.5)), 13.5, SEMIBOLD, t.text, Align::Left);
-            ty += lh(13.5) + 1.0;
+            self.ui.text(&r.title, Rect::new(tx, ty, tw, lh(13.0)), 13.0, SEMIBOLD, t.text, Align::Left);
+            ty += lh(13.0) + 1.0;
             for d in &l.desc {
-                self.ui.text(d, Rect::new(tx, ty, tw, lh(11.5)), 11.5, SEMIBOLD, t.subtext, Align::Left);
-                ty += lh(11.5);
+                self.ui.text(d, Rect::new(tx, ty, tw, lh(11.0)), 11.0, SEMIBOLD, t.subtext, Align::Left);
+                ty += lh(11.0);
             }
             if let Some((_, size, weight)) = &r.foot {
                 let mut fy = y + 11.0 + l.inner + 8.0;
@@ -713,7 +713,7 @@ impl Pg<'_, '_> {
         let bg = if hov || open { t.hover } else { t.surface2 };
         self.ui.fill(r, 7.0, with_alpha(bg, a));
         let label = labels.get(sel).copied().unwrap_or("");
-        self.ui.text(label, r.pad(9.0, 0.0, 26.0, 0.0), 13.5, REGULAR, with_alpha(t.text, a), Align::Left);
+        self.ui.text(label, r.pad(9.0, 0.0, 26.0, 0.0), 13.0, REGULAR, with_alpha(t.text, a), Align::Left);
         // Chevron: 8×4 path, 10 from the right.
         let (cx, cy) = (r.right() - 14.0, r.cy());
         let c = self.ui.c(with_alpha(t.subtext, a));
@@ -773,7 +773,7 @@ impl Pg<'_, '_> {
         let clip = intersect(inner, self.view);
         self.ui.push_clip(clip);
         let before = self.ui.field_text(fid);
-        let sub = self.ui.text_field(fid, inner, placeholder, 13.5);
+        let sub = self.ui.text_field(fid, inner, placeholder, 13.0);
         self.ui.pop_clip();
         if error && self.ui.field_text(fid) != before {
             self.s.field_error = None;
@@ -800,7 +800,7 @@ impl Pg<'_, '_> {
         let clip = intersect(inner, self.view);
         self.ui.push_clip(clip);
         let before = self.ui.field_text(fid);
-        let sub = self.ui.text_field(fid, inner, placeholder, 13.5);
+        let sub = self.ui.text_field(fid, inner, placeholder, 13.0);
         self.ui.pop_clip();
         if let Some(v) = &sub {
             self.ui.set_field_text(fid, v); // the kit clears on Enter; keep it until it's accepted
@@ -849,16 +849,16 @@ impl Pg<'_, '_> {
         let inner = r.pad(12.0, 0.0, 10.0, 0.0);
         let n = self.s.token.chars().count().min(40);
         if n == 0 {
-            self.ui.text(placeholder, inner, 13.5, REGULAR, t.subtext, Align::Left);
+            self.ui.text(placeholder, inner, 13.0, REGULAR, t.subtext, Align::Left);
         } else {
             let dots: String = "•".repeat(n);
-            self.ui.text(&dots, inner, 13.5, REGULAR, t.text, Align::Left);
+            self.ui.text(&dots, inner, 13.0, REGULAR, t.text, Align::Left);
         }
         if focused {
             self.ui.animate = true;
             if self.ui.st.caret_on {
                 let dots: String = "•".repeat(n);
-                let x = inner.x + self.ui.measure(&dots, 13.5, REGULAR) + 1.0;
+                let x = inner.x + self.ui.measure(&dots, 13.0, REGULAR) + 1.0;
                 self.ui.g.line(x, r.cy() - 8.0, x, r.cy() + 8.0, self.ui.c(t.accent), 2.0);
             }
         }
@@ -870,11 +870,11 @@ impl Pg<'_, '_> {
         let Some(r) = at else { return };
         let t = self.ui.t;
         self.ui.fill(r, 6.0, t.hover);
-        self.ui.text(text, r, 10.5, MEDIUM, t.text, Align::Center);
+        self.ui.text(text, r, 11.0, MEDIUM, t.text, Align::Center);
     }
 
     pub fn badge_w(&self, text: &str) -> f32 {
-        self.ui.measure(text, 10.5, MEDIUM).ceil() + 16.0
+        self.ui.measure(text, 11.0, MEDIUM).ceil() + 16.0
     }
 
     /// Small helper to run something off the UI thread with the shared results.

@@ -98,7 +98,7 @@ pub fn draw(ui: &mut Ui, s: &mut State, r: Rect, _go: &mut Option<&'static str>)
     let player = if split { Rect::new(inner.x, inner.y, inner.w / 2.1, inner.h) } else { inner };
 
     // ---- art and text
-    let (art_size, title_size) = if split { (64.0, 15.0) } else { (84.0, 18.0) };
+    let (art_size, title_size) = if split { (64.0, 14.0) } else { (84.0, 17.0) };
     // The top area: what's left above the seek bar (10 + 14) and the controls (4 + 36).
     let (_, top) = player.take_bottom(36.0 + 4.0 + 14.0 + 10.0, 0.0);
     let art = Rect::new(player.x, top.cy() - art_size / 2.0, art_size, art_size);
@@ -130,11 +130,11 @@ pub fn draw(ui: &mut Ui, s: &mut State, r: Rect, _go: &mut Option<&'static str>)
     }
     let total: f32 = heights.iter().sum();
     let mut y = top.cy() - total / 2.0;
-    ui.text(app, Rect::new(tx, y, tw, 14.0), 10.5, BOLD, t.subtext, Align::Left);
+    ui.text(app, Rect::new(tx, y, tw, 14.0), 11.0, BOLD, t.subtext, Align::Left);
     y += 14.0 + 2.0;
     ui.text(title, Rect::new(tx, y, tw, title_h), title_size, SEMIBOLD, t.text, Align::Left);
     y += title_h;
-    ui.text(artist, Rect::new(tx, y, tw, 17.0), 12.5, REGULAR, t.subtext, Align::Left);
+    ui.text(artist, Rect::new(tx, y, tw, 17.0), 12.0, REGULAR, t.subtext, Align::Left);
     y += 17.0;
     if !status.is_empty() {
         ui.text(status, Rect::new(tx, y + 4.0, tw, 15.0), 11.0, REGULAR, with_alpha(t.subtext, 0.8), Align::Left);
@@ -297,7 +297,7 @@ fn draw_lyrics(ui: &mut Ui, s: &mut State, col: Rect, lines: &Arc<Vec<lyrics::Li
         }
     }
     ui.pop_clip();
-    ui.text("LRCLIB", Rect::new(view.right() - 60.0, view.bottom() - 12.0, 60.0, 12.0), 9.0, REGULAR, with_alpha(t.subtext, 0.5 * fade), Align::Right);
+    ui.text("LRCLIB", Rect::new(view.right() - 60.0, view.bottom() - 12.0, 60.0, 12.0), 10.0, REGULAR, with_alpha(t.subtext, 0.5 * fade), Align::Right);
 }
 
 /// The card: surface, or (with art) a left-to-right gradient from the art's tint to the surface.

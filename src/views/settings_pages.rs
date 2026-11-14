@@ -152,8 +152,8 @@ pub fn appearance(p: &mut Pg) {
         p.y -= 4.0;
         let sub = p.ui.t.subtext;
         let hint = "Every scheme comes with its own accent (Auto). Pick another to override it.";
-        p.ui.text(hint, Rect::new(p.x + 4.0, p.y, p.w - 4.0, lh(11.5)), 11.5, REGULAR, sub, Align::Left);
-        p.y += lh(11.5) + 8.0;
+        p.ui.text(hint, Rect::new(p.x + 4.0, p.y, p.w - 4.0, lh(11.0)), 11.0, REGULAR, sub, Align::Left);
+        p.y += lh(11.0) + 8.0;
         let own = theme::accent(theme::scheme(&s.theme_scheme).accent);
         let mut x = p.x;
         let mut y = p.y;
@@ -230,9 +230,9 @@ fn material_card(p: &mut Pg, r: Rect, name: &str, sub: &str, glass: bool, select
     p.ui.g.stroke_round(pill.inset(0.5, 0.5).d2d(), 14.5, p.ui.c(color(0xFFFFFF, if glass { 0x60 as f32 / 255.0 } else { 0x20 as f32 / 255.0 })), 1.0);
     let n = crate::notch::now();
     p.ui.text(&format!("{:02}:{:02}", n.hour, n.minute), pill, 12.0, SEMIBOLD, color(sc.text, 1.0), Align::Center);
-    p.ui.text(name, Rect::new(r.x + 4.0, frame.bottom() + 6.0, r.w, lh(12.5)), 12.5, SEMIBOLD, t.text, Align::Left);
-    p.ui.text(sub, Rect::new(r.x + 4.0, frame.bottom() + 6.0 + lh(12.5), r.w, lh(10.5)), 10.5, REGULAR, t.subtext, Align::Left);
-    p.ui.clicked(Rect::new(r.x, r.y, 157.0, 71.0 + 6.0 + lh(12.5) + lh(10.5)))
+    p.ui.text(name, Rect::new(r.x + 4.0, frame.bottom() + 6.0, r.w, lh(12.0)), 12.0, SEMIBOLD, t.text, Align::Left);
+    p.ui.text(sub, Rect::new(r.x + 4.0, frame.bottom() + 6.0 + lh(12.0), r.w, lh(11.0)), 11.0, REGULAR, t.subtext, Align::Left);
+    p.ui.clicked(Rect::new(r.x, r.y, 157.0, 71.0 + 6.0 + lh(12.0) + lh(11.0)))
 }
 
 /// A blue → pink gradient (30°) in a rounded rectangle: strips, clipped by rounded end caps.
@@ -277,7 +277,7 @@ fn scheme_card(p: &mut Pg, r: Rect, sc: &theme::Scheme, acc: u32, selected: bool
     p.ui.fill(Rect::new(left.x + 5.0, left.y + 12.0, 30.0, 3.0), 1.5, accent);
     p.ui.g.fill_circle(right.cx(), right.cy(), 4.5, p.ui.c(accent));
     let name_c = if selected { text } else { color(sc.subtext, 1.0) };
-    p.ui.text(sc.name, Rect::new(inner.x + 10.0, inner.bottom() - 7.0 - lh(10.5), inner.w - 30.0, lh(10.5)), 10.5, SEMIBOLD, name_c, Align::Left);
+    p.ui.text(sc.name, Rect::new(inner.x + 10.0, inner.bottom() - 7.0 - lh(11.0), inner.w - 30.0, lh(11.0)), 11.0, SEMIBOLD, name_c, Align::Left);
     if selected {
         let (cx, cy) = (inner.right() - 7.0 - 7.5, inner.bottom() - 6.0 - 7.5);
         p.ui.g.fill_circle(cx, cy, 7.5, p.ui.c(accent));
@@ -551,7 +551,7 @@ fn tool_list(p: &mut Pg, list: &[&tools::Tool], shown: bool) {
         p.ui.fill(tile, 6.0, t.hover);
         p.ui.icon(tool.icon, tile.cx(), tile.cy(), 13.0, t.text);
         let name = if tool.title.is_empty() { "Home" } else { tool.title };
-        p.ui.text(name, Rect::new(tile.right() + 11.0, r.y, 260.0, r.h), 13.5, MEDIUM, t.text, Align::Left);
+        p.ui.text(name, Rect::new(tile.right() + 11.0, r.y, 260.0, r.h), 13.0, MEDIUM, t.text, Align::Left);
         let tog = Rect::new(r.right() - 38.0, r.cy() - 11.0, 38.0, 22.0);
         if switch(p.ui, tog, shown) {
             action = Some((i, 0));
@@ -743,7 +743,7 @@ pub fn keyboard(p: &mut Pg) {
         }
     }
     let k1 = "1 – 9  ·  ← →";
-    let bh = lh(10.5) + 6.0;
+    let bh = lh(11.0) + 6.0;
     let rr = p.card(
         Some("INSIDE THE NOTCH"),
         &[
@@ -897,7 +897,7 @@ pub fn calendar(p: &mut Pg) {
     let add_w = p.button_w("Add");
     let mut add = R::c("Add a calendar", add_desc, 200.0 + 6.0 + add_w + 4.0 + CTRL_H);
     if p.s.feed_help {
-        add = add.foot_styled(ICS_HELP, 11.5, SEMIBOLD);
+        add = add.foot_styled(ICS_HELP, 11.0, SEMIBOLD);
     }
     rows.push(add);
     let rr = p.card(Some("SUBSCRIBED CALENDARS"), &rows);
@@ -1302,19 +1302,19 @@ pub fn about(p: &mut Pg) {
     let intro = "Everything stays on this PC. These tools go online only while you use them:";
     let outro = "API keys are encrypted with Windows DPAPI and only ever sent to their own provider.";
     let tw = p.w - 32.0;
-    let intro_lines = wrap_lines(p.ui, intro, 12.5, REGULAR, tw);
-    let outro_lines = wrap_lines(p.ui, outro, 11.5, REGULAR, tw);
+    let intro_lines = wrap_lines(p.ui, intro, 12.0, REGULAR, tw);
+    let outro_lines = wrap_lines(p.ui, outro, 11.0, REGULAR, tw);
     let what_w = tw - 34.0 - 84.0;
     let what_lines: Vec<Vec<String>> = items.iter().map(|(_, _, w)| wrap_lines(p.ui, w, 12.0, REGULAR, what_w)).collect();
     let rows_h: f32 = what_lines.iter().map(|l| 6.0 + (l.len() as f32 * lh(12.0)).max(24.0)).sum();
-    let h = 2.0 + 12.0 + intro_lines.len() as f32 * lh(12.5) + 8.0 + rows_h + 8.0 + outro_lines.len() as f32 * lh(11.5) + 12.0 + 2.0;
+    let h = 2.0 + 12.0 + intro_lines.len() as f32 * lh(12.0) + 8.0 + rows_h + 8.0 + outro_lines.len() as f32 * lh(11.0) + 12.0 + 2.0;
     let card = Rect::new(p.x, p.y, p.w, h);
     p.ui.fill(card, 16.0, t.surface);
     let x0 = card.x + 16.0;
     let mut y = card.y + 14.0;
     for l in &intro_lines {
-        p.ui.text(l, Rect::new(x0, y, tw, lh(12.5)), 12.5, REGULAR, t.text, Align::Left);
-        y += lh(12.5);
+        p.ui.text(l, Rect::new(x0, y, tw, lh(12.0)), 12.0, REGULAR, t.text, Align::Left);
+        y += lh(12.0);
     }
     y += 8.0;
     for ((icon, name, _), lines) in items.iter().zip(&what_lines) {
@@ -1323,7 +1323,7 @@ pub fn about(p: &mut Pg) {
         let tile = Rect::new(x0, row_y + (rh - 24.0) / 2.0, 24.0, 24.0);
         p.ui.fill(tile, 7.0, t.accent_soft);
         p.ui.icon(icon, tile.cx(), tile.cy(), 12.0, t.accent);
-        p.ui.text(name, Rect::new(x0 + 34.0, row_y, 84.0, rh), 12.5, SEMIBOLD, t.text, Align::Left);
+        p.ui.text(name, Rect::new(x0 + 34.0, row_y, 84.0, rh), 12.0, SEMIBOLD, t.text, Align::Left);
         let mut ly = row_y + (rh - lines.len() as f32 * lh(12.0)) / 2.0;
         for l in lines {
             p.ui.text(l, Rect::new(x0 + 34.0 + 84.0, ly, what_w, lh(12.0)), 12.0, REGULAR, t.subtext, Align::Left);
@@ -1333,8 +1333,8 @@ pub fn about(p: &mut Pg) {
     }
     y += 8.0;
     for l in &outro_lines {
-        p.ui.text(l, Rect::new(x0, y, tw, lh(11.5)), 11.5, REGULAR, t.subtext, Align::Left);
-        y += lh(11.5);
+        p.ui.text(l, Rect::new(x0, y, tw, lh(11.0)), 11.0, REGULAR, t.subtext, Align::Left);
+        y += lh(11.0);
     }
     p.y = card.bottom();
 
@@ -1348,7 +1348,7 @@ pub fn about(p: &mut Pg) {
     let n = crate::notch::now();
     let qw = p.button_w("Quit FathNotch");
     let q = Rect::new(p.x + p.w - qw, p.y, qw, CTRL_H);
-    p.ui.text(&format!("© {} FathNotch", n.year), Rect::new(p.x + 4.0, p.y, 200.0, CTRL_H), 11.5, REGULAR, t.subtext, Align::Left);
+    p.ui.text(&format!("© {} FathNotch", n.year), Rect::new(p.x + 4.0, p.y, 200.0, CTRL_H), 11.0, REGULAR, t.subtext, Align::Left);
     let hov = p.ui.hovered(q);
     p.ui.fill(q, 8.0, with_alpha(t.surface2, if hov { 0.85 } else { 1.0 }));
     p.ui.text("Quit FathNotch", q, 13.0, MEDIUM, t.danger, Align::Center);
