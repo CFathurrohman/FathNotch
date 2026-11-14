@@ -198,7 +198,7 @@ fn empty(ui: &mut Ui, r: Rect) {
 
 /// The icon a FathNotch alert was raised with (the names `push_alert` callers use).
 fn own_icon(name: &str) -> &'static str {
-    const KNOWN: &[&str] = &["ArrowDown", "ArrowUp", "Clock", "Moon", "CalendarDays", "Bell", "Bolt", "DevicePhone"];
+    const KNOWN: &[&str] = &["Alarm", "ArrowDown", "ArrowUp", "Clock", "Moon", "CalendarDays", "Bell", "Bolt", "DevicePhone"];
     KNOWN.iter().copied().find(|k| *k == name).unwrap_or("Bell")
 }
 

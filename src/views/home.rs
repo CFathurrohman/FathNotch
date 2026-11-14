@@ -82,7 +82,8 @@ fn refresh_lists(s: &mut State) {
 
 /// Cards fade in and rise 8 px over 320 ms, each `delay` later (C# Rise).
 fn rise(ui: &mut Ui, s: &State, delay: f64) -> (f32, f32) {
-    let k = ((model::clock_secs() - s.shown_at - delay) / 0.32).clamp(0.0, 1.0) as f32;
+    let since = crate::services::settings::anim_secs((model::clock_secs() - s.shown_at) as f32) as f64;
+    let k = ((since - delay) / 0.32).clamp(0.0, 1.0) as f32;
     if k < 1.0 {
         ui.animate = true;
     }

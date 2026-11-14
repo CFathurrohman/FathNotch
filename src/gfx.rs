@@ -82,6 +82,8 @@ pub struct Gfx {
     brush: ID2D1SolidColorBrush,
     round: ID2D1StrokeStyle,
     base: RefCell<Matrix3x2>,
+    /// `base` without the stagger offset (`set_offset`).
+    origin: RefCell<Matrix3x2>,
     fonts: RefCell<HashMap<(u32, u16, bool), IDWriteTextFormat>>,
     /// Inter (the app's UI font, as in the .NET build), loaded from files next to the data.
     inter: Option<IDWriteFontCollection>,
@@ -175,6 +177,7 @@ impl Gfx {
                 brush,
                 round,
                 base: RefCell::new(identity()),
+                origin: RefCell::new(identity()),
                 fonts: RefCell::new(HashMap::new()),
                 inter,
                 icons: RefCell::new(HashMap::new()),
@@ -271,6 +274,16 @@ impl Gfx {
     /// Everything drawn next is scaled by `s` around `(ox, oy)` (the open panel's "Panel size").
     pub fn set_base(&self, s: f32, ox: f32, oy: f32) {
         let m = Matrix3x2 { M11: s, M12: 0.0, M21: 0.0, M22: s, M31: ox - ox * s, M32: oy - oy * s };
+        *self.base.borrow_mut() = m;
+        *self.origin.borrow_mut() = m;
+        unsafe { self.rt.SetTransform(&m) };
+    }
+
+    /// Moves what's drawn next by (dx, dy) layout units (cards rising into place); (0, 0) puts it back.
+    pub fn set_offset(&self, dx: f32, dy: f32) {
+        let mut m = *self.origin.borrow();
+        m.M31 += dx * m.M11;
+        m.M32 += dy * m.M22;
         *self.base.borrow_mut() = m;
         unsafe { self.rt.SetTransform(&m) };
     }

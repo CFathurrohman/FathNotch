@@ -58,12 +58,14 @@ pub fn push_alert(a: Alert) {
                 Some("timer") => "Timers",
                 Some("prayer") => "Prayer",
                 Some("calendar") => "Calendar",
+                Some("alarm") => "Alarm",
                 _ if a.key.starts_with("download:") => "Downloads",
                 _ => "FathNotch",
             };
             notifications::add_local(source, icon, title, sub);
         }
-        if settings::shared().silent_mode {
+        // Silent keeps notifications quiet, but an alarm still rings.
+        if settings::shared().silent_mode && !a.key.starts_with("alarm:") {
             bg::refresh();
             return;
         }
@@ -128,6 +130,31 @@ pub fn start() {
             ticktick::start_auto(300);
         }
     });
+    // Alarms: checked every 2 s so they ring on the minute.
+    // A ringing alarm keeps its sound going (restarted now and then, in case another sound cut it off)
+    // until Snooze or Stop; the pop-up stays up just as long.
+    std::thread::spawn(|| {
+        let mut sound_at: Option<(u64, Instant, bool)> = None;
+        loop {
+            if let Some(a) = crate::services::alarms::due() {
+                ring_alarm(&a);
+                sound_at = Some((a.id, Instant::now(), crate::services::sound::alarm()));
+            }
+            match (crate::services::alarms::ringing(), sound_at) {
+                (Some(a), Some((id, at, looping))) if a.id == id => {
+                    if !looping || at.elapsed() > Duration::from_secs(60) {
+                        sound_at = Some((id, Instant::now(), crate::services::sound::alarm()));
+                    }
+                }
+                (None, Some(_)) => {
+                    crate::services::sound::stop();
+                    sound_at = None;
+                }
+                _ => {}
+            }
+            std::thread::sleep(Duration::from_secs(2));
+        }
+    });
     // Once a minute: weather (every 10 min), prayer alerts, finished timers.
     std::thread::spawn(|| loop {
         minute_tick();
@@ -164,6 +191,22 @@ fn minute_tick() {
                 duration: Duration::from_secs(10),
             });
         }
+    }
+}
+
+/// An alarm going off: a pop-up (also kept in Notifications) that stays while it rings; clicking it opens
+/// Alarm with Snooze and Stop. The sound is the caller's.
+fn ring_alarm(a: &crate::services::alarms::Alarm) {
+    push_alert(alarm_alert(a));
+}
+
+/// The pop-up of a ringing alarm (× snoozes it, a click opens Snooze / Stop).
+pub fn alarm_alert(a: &crate::services::alarms::Alarm) -> Alert {
+    let title = if a.label.is_empty() { "Alarm".to_string() } else { a.label.clone() };
+    Alert {
+        key: format!("alarm:{}", a.id),
+        kind: AlertKind::Full { icon: "Alarm", title, sub: format!("{} · tap for Snooze or Stop", a.time()), open: Some("alarm"), app: None },
+        duration: Duration::from_secs(6 * 3600),
     }
 }
 

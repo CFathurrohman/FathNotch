@@ -1,4 +1,4 @@
-//! Control: Wi-Fi, Bluetooth, Hotspot and Silent tiles (the round badge toggles, the card opens its choices
+//! Control: Wi-Fi, Bluetooth, Hotspot, Silent and Awake tiles (the round badge toggles, the card opens its choices
 //! or its Settings page), brightness per display, output/input devices with their levels (the icon mutes),
 //! and volume per app. Sizes follow the C# ControlView.xaml.
 
@@ -174,10 +174,10 @@ fn tile(ui: &mut Ui, r: Rect, icon: &'static str, name: &str, status: &str, on: 
 }
 
 fn draw_tiles(ui: &mut Ui, s: &mut State, d: &Data, r: Rect) {
-    let w = r.w / 4.0;
+    let w = (r.w + 6.0) / 5.0;
     let base = ui.alpha;
     let mut cols = Vec::new();
-    for i in 0..4 {
+    for i in 0..5 {
         // Rise in, 40 ms apart (C# RiseIn).
         let k = ((model::clock_secs() - s.shown_at - 0.04 * i as f64) / 0.32).clamp(0.0, 1.0) as f32;
         if k < 1.0 {
@@ -255,6 +255,14 @@ fn draw_tiles(ui: &mut Ui, s: &mut State, d: &Data, r: Rect) {
     }
     if open {
         crate::shell::open_settings_page("ms-settings:notifications");
+    }
+
+    // Keep awake: the PC and screen don't sleep while it's on (runs on this, the window thread).
+    ui.alpha = base * cols[4].1;
+    let awake = crate::services::awake::on();
+    let (tog, open) = tile(ui, cols[4].0, "Coffee", "Awake", if awake { "On" } else { "Off" }, awake, true);
+    if tog || open {
+        crate::services::awake::set(!awake);
     }
     ui.alpha = base;
 }

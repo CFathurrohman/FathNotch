@@ -1,4 +1,4 @@
-﻿//! Timers: Timer | Stopwatch | Pomodoro switch on top; below, one card with the round progress ring and the
+﻿//! Timers: Timer | Stopwatch | Pomodoro | Alarm switch on top (Alarm draws `alarm::draw`); below, one card with the round progress ring and the
 //! time, what the mode is doing (session dots, preset, laps), and the controls: start/pause, a secondary
 //! button (+1 min for timers, lap for the stopwatch), reset, plus the length and sound pickers.
 
@@ -9,9 +9,19 @@ use crate::services::{settings, timers};
 use crate::services::timers::Kind;
 use crate::ui::{id, Rect, Ui};
 
+use super::picker::{self, Dial, Field, Mode, Picked};
+
 const SOUNDS: [&str; 4] = ["No Sound", "Soft Chime", "Bell", "Ping"];
-const POMODORO: [(u64, u64); 4] = [(15, 3), (25, 5), (45, 10), (60, 15)];
-const PRESETS: [u64; 8] = [1, 5, 10, 15, 25, 30, 45, 60];
+/// Longest timer / pomodoro phase the picker allows (11h 59m).
+const MAX_MIN: u64 = 11 * 60 + 59;
+
+/// Which length the dial is picking.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Target {
+    Countdown,
+    Focus,
+    Break,
+}
 /// C# "GoodBrush" (the break arc).
 const GOOD: u32 = 0x32D74B;
 const ROW_H: f32 = 30.0;
@@ -33,43 +43,86 @@ pub struct State {
     popup: Option<Popup>,
     /// Picked this frame: (box id, option).
     picked: Option<(u64, usize)>,
+    /// The Alarm segment is open (alarms live in this tab too).
+    pub show_alarm: bool,
+    pub alarm: super::alarm::State,
+    /// The shared time picker, open on a length.
+    dial: Option<(Target, Dial)>,
+    /// The switch highlight as drawn: x, width, set (0 until the first frame).
+    seg: (f32, f32, f32),
+    /// Switching segments: when, and from which side.
+    seg_anim: Option<(std::time::Instant, f32)>,
 }
 
 impl Default for State {
     fn default() -> Self {
-        Self { mode: Kind::Pomodoro, laps: Vec::new(), popup: None, picked: None }
+        Self { mode: Kind::Pomodoro, laps: Vec::new(), popup: None, picked: None, show_alarm: false, alarm: Default::default(), dial: None, seg: (0.0, 0.0, 0.0), seg_anim: None }
     }
 }
 
 pub fn shown(s: &mut State) {
     s.popup = None;
+    s.dial = None;
     let st = settings::get();
     timers::set_config(st.pomodoro_work_min.max(1) as u64, st.pomodoro_break_min.max(1) as u64);
     // Open on whatever is running.
     if let Some(t) = timers::current() {
         s.mode = t.kind;
+        s.show_alarm = false;
     }
+    super::alarm::shown(&mut s.alarm);
 }
 
 pub fn draw(ui: &mut Ui, s: &mut State, r: Rect, _go: &mut Option<&'static str>) {
-    let t = ui.t;
     // The open list takes clicks and the wheel before anything under it.
     popup_input(ui, s, r);
     let (seg, rest) = r.take_top(36.0, 12.0);
+    // A ringing alarm shows its Snooze / Stop here.
+    if crate::services::alarms::ringing().is_some() {
+        s.show_alarm = true;
+    }
     segments(ui, s, seg);
+    let base_alpha = ui.alpha;
+    let rest = seg_transition(ui, s, rest);
+    body(ui, s, r, rest);
+    ui.alpha = base_alpha;
+}
+
+fn body(ui: &mut Ui, s: &mut State, r: Rect, rest: Rect) {
+    let t = ui.t;
+    if s.show_alarm {
+        s.popup = None;
+        super::alarm::draw(ui, &mut s.alarm, rest.pad(18.0, 0.0, 18.0, 6.0));
+        return;
+    }
 
     let card = rest.pad(18.0, 0.0, 18.0, 6.0);
     ui.card(card, 18.0);
     let inner = card.pad(18.0, 10.0, 18.0, 10.0);
 
+    // The shared time picker, over the card, while a length is being picked.
+    if let Some((target, mut c)) = s.dial {
+        s.popup = None;
+        match picker::dial(ui, &mut c, card.pad(18.0, 6.0, 18.0, 6.0), None) {
+            Picked::None => s.dial = Some((target, c)),
+            Picked::Cancel | Picked::Clear => s.dial = None,
+            Picked::Set(h, m) => {
+                set_length(target, (h * 60 + m) as u64);
+                s.dial = None;
+            }
+        }
+        return;
+    }
+
     let st = settings::get();
     let cur = timers::current().filter(|x| x.kind == s.mode);
-    let (focus_min, _) = timers::config();
-    let timer_min = PRESETS.iter().copied().find(|m| *m == st.timer_minutes as u64).unwrap_or(10);
+    let (focus_min, break_min) = timers::config();
+    let timer_min = (st.timer_minutes.max(1) as u64).min(MAX_MIN);
+    let clock = |m: u64| if m >= 60 { format!("{}:{:02}:00", m / 60, m % 60) } else { format!("{m:02}:00") };
     let text = match (&cur, s.mode) {
         (Some(c), _) => c.text(),
-        (None, Kind::Pomodoro) => format!("{focus_min:02}:00"),
-        (None, Kind::Countdown) => format!("{timer_min:02}:00"),
+        (None, Kind::Pomodoro) => clock(focus_min),
+        (None, Kind::Countdown) => clock(timer_min),
         (None, Kind::Stopwatch) => "00:00".into(),
     };
     let progress = match (&cur, s.mode) {
@@ -90,8 +143,8 @@ pub fn draw(ui: &mut Ui, s: &mut State, r: Rect, _go: &mut Option<&'static str>)
     }
     ui.text(&text, Rect::new(ring.x - 10.0, ring.y, ring.w + 20.0, ring.h), if text.len() > 5 { 21.0 } else { 26.0 }, BOLD, t.text, Align::Center);
 
-    // Controls (right): buttons row, then the two pickers.
-    let ctrl_w = 254.0;
+    // Controls (right): buttons row, then the length(s) and the sound.
+    let ctrl_w = 264.0;
     let ctrl = Rect::new(inner.right() - ctrl_w, inner.cy() - 45.0, ctrl_w, 90.0);
     let running = cur.is_some_and(|c| c.running());
     let reset = Rect::new(ctrl.right() - 46.0, ctrl.y + 2.0, 46.0, 46.0);
@@ -115,37 +168,43 @@ pub fn draw(ui: &mut Ui, s: &mut State, r: Rect, _go: &mut Option<&'static str>)
         Kind::Pomodoro => "Forward",
         Kind::Countdown => "Plus",
     };
-    if circle_button(ui, second, second_icon) {
+    // Each one only shows as a button when it does something: Lap while the stopwatch runs, Skip while a
+    // pomodoro is on, +1 min always (before the start it lengthens the timer).
+    let second_on = match s.mode {
+        Kind::Stopwatch => running,
+        Kind::Pomodoro => cur.is_some(),
+        Kind::Countdown => true,
+    };
+    if circle_button(ui, second, second_icon, second_on) {
         match (s.mode, &cur) {
-            (Kind::Stopwatch, Some(c)) if c.running() => s.laps.push(c.elapsed()),
-            (Kind::Stopwatch, _) => {}
+            (Kind::Stopwatch, Some(c)) => s.laps.push(c.elapsed()),
             // Skip: straight to the next phase.
-            (Kind::Pomodoro, _) => timers::skip(),
-            (_, Some(_)) => timers::add_minute(),
+            (Kind::Pomodoro, Some(_)) => timers::skip(),
+            (Kind::Countdown, Some(_)) => timers::add_minute(),
+            (Kind::Countdown, None) => set_length(Target::Countdown, timer_min + 1),
             _ => {}
         }
     }
-    if circle_button(ui, reset, "Refresh") {
+    let reset_on = cur.is_some() || !s.laps.is_empty();
+    if circle_button(ui, reset, "Refresh", reset_on) {
         if cur.is_some() {
             timers::stop();
         }
         s.laps.clear();
     }
 
-    let dur = Rect::new(ctrl.x, ctrl.bottom() - 28.0, 128.0, 28.0);
-    let snd = Rect::new(dur.right() + 8.0, dur.y, 118.0, 28.0);
+    let dur = Rect::new(ctrl.x, ctrl.bottom() - 28.0, 146.0, 28.0);
+    let snd = Rect::new(dur.right() + 8.0, dur.y, ctrl.right() - dur.right() - 8.0, 28.0);
     let sounds: Vec<String> = SOUNDS.iter().map(|x| x.to_string()).collect();
     match s.mode {
         Kind::Pomodoro => {
-            let opts: Vec<String> = POMODORO.iter().map(|(w, b)| format!("{w} / {b} min")).collect();
-            let sel = POMODORO.iter().position(|&(w, b)| w == st.pomodoro_work_min as u64 && b == st.pomodoro_break_min as u64).unwrap_or(1);
-            if let Some(i) = combo(ui, s, id("timer.duration.pomodoro"), dur, &opts, sel) {
-                let (w, b) = POMODORO[i];
-                settings::update(|x| {
-                    x.pomodoro_work_min = w as i32;
-                    x.pomodoro_break_min = b as i32;
-                });
-                timers::set_config(w, b);
+            // Focus and break lengths, side by side: scroll either, or click for the dial.
+            let half = (dur.w - 4.0) / 2.0;
+            for (i, (target, icon, len)) in [(Target::Focus, "Bolt", focus_min), (Target::Break, "Moon", break_min)].into_iter().enumerate() {
+                let b = Rect::new(dur.x + i as f32 * (half + 4.0), dur.y, half, dur.h);
+                if let Some(d) = length_box(ui, s, b, target, Some(icon), len) {
+                    s.dial = Some((target, d));
+                }
             }
             let sel = SOUNDS.iter().position(|x| *x == st.pomodoro_sound).unwrap_or(1);
             if let Some(i) = combo(ui, s, id("timer.sound.pomodoro"), snd, &sounds, sel) {
@@ -153,10 +212,8 @@ pub fn draw(ui: &mut Ui, s: &mut State, r: Rect, _go: &mut Option<&'static str>)
             }
         }
         Kind::Countdown => {
-            let opts: Vec<String> = PRESETS.iter().map(|m| format!("{m} min")).collect();
-            let sel = PRESETS.iter().position(|m| *m == timer_min).unwrap_or(2);
-            if let Some(i) = combo(ui, s, id("timer.duration.countdown"), dur, &opts, sel) {
-                settings::update(|x| x.timer_minutes = PRESETS[i] as i32);
+            if let Some(d) = length_box(ui, s, dur, Target::Countdown, None, timer_min) {
+                s.dial = Some((Target::Countdown, d));
             }
             let sel = SOUNDS.iter().position(|x| *x == st.timer_sound).unwrap_or(1);
             if let Some(i) = combo(ui, s, id("timer.sound.countdown"), snd, &sounds, sel) {
@@ -164,8 +221,25 @@ pub fn draw(ui: &mut Ui, s: &mut State, r: Rect, _go: &mut Option<&'static str>)
             }
         }
         Kind::Stopwatch => {
-            disabled_box(ui, dur, "Laps");
-            disabled_box(ui, snd, "No Sound");
+            // No length or sound to pick: the latest laps go here instead.
+            let row = Rect::new(dur.x, dur.y, ctrl.right() - dur.x, dur.h);
+            let mut x = row.x;
+            for (i, lap) in s.laps.iter().enumerate().rev().take(3) {
+                let prev = if i == 0 { Duration::ZERO } else { s.laps[i - 1] };
+                let label = format!("#{} {}", i + 1, lap_text(*lap - prev));
+                let w = ui.measure(&label, 12.0, SEMIBOLD) + 16.0;
+                if x + w > row.right() {
+                    break;
+                }
+                let chip = Rect::new(x, row.y + 2.0, w, row.h - 4.0);
+                ui.fill(chip, 8.0, t.surface2);
+                ui.text(&label, chip, 12.0, SEMIBOLD, if i + 1 == s.laps.len() { t.text } else { t.subtext }, Align::Center);
+                x += w + 6.0;
+            }
+            if s.laps.is_empty() {
+                let hint = if running { "Press the flag for a lap" } else { "Start, then press the flag for laps" };
+                ui.text(hint, row, 12.0, MEDIUM, t.subtext, Align::Left);
+            }
         }
     }
 
@@ -197,7 +271,7 @@ pub fn draw(ui: &mut Ui, s: &mut State, r: Rect, _go: &mut Option<&'static str>)
         Kind::Countdown => {
             let y = inner.cy() - 24.0;
             title_row(ui, ix, y, iw, "Clock", "Timer");
-            ui.text(&format!("{timer_min} minute countdown"), Rect::new(ix, y + 20.0, iw, 17.0), 12.0, SEMIBOLD, t.subtext, Align::Left);
+            ui.text(&format!("{} countdown", picker::text((timer_min / 60) as u32, (timer_min % 60) as u32, Mode::Length)), Rect::new(ix, y + 20.0, iw, 17.0), 12.0, SEMIBOLD, t.subtext, Align::Left);
             ui.text("Stays in the closed notch.", Rect::new(ix, y + 43.0, iw, 16.0), 12.0, SEMIBOLD, t.subtext, Align::Left);
         }
         Kind::Stopwatch => {
@@ -291,45 +365,81 @@ fn draw_popup(ui: &mut Ui, s: &mut State, area: Rect) {
 
 fn segments(ui: &mut Ui, s: &mut State, r: Rect) {
     let t = ui.t;
-    let labels = [("Timer", Kind::Countdown), ("Stopwatch", Kind::Stopwatch), ("Pomodoro", Kind::Pomodoro)];
-    let widths: Vec<f32> = labels.iter().map(|(l, _)| (ui.measure(l, 13.0, SEMIBOLD) + 28.0).max(104.0)).collect();
+    let labels = [("Timer", Some(Kind::Countdown)), ("Stopwatch", Some(Kind::Stopwatch)), ("Pomodoro", Some(Kind::Pomodoro)), ("Alarm", None)];
+    let widths: Vec<f32> = labels.iter().map(|(l, _)| (ui.measure(l, 13.0, SEMIBOLD) + 28.0).max(96.0)).collect();
     let total: f32 = widths.iter().sum::<f32>() + 6.0;
     let bar = Rect::new(r.cx() - total / 2.0, r.y, total, 36.0);
     ui.fill(bar, 11.0, t.surface);
+    let mut rects = Vec::new();
     let mut x = bar.x + 3.0;
-    for ((label, kind), w) in labels.iter().zip(widths) {
-        let b = Rect::new(x, bar.y + 3.0, w, 30.0);
-        let on = s.mode == *kind;
+    for w in &widths {
+        rects.push(Rect::new(x, bar.y + 3.0, *w, 30.0));
+        x += w;
+    }
+    let selected = labels
+        .iter()
+        .position(|(_, kind)| match kind {
+            Some(k) => !s.show_alarm && s.mode == *k,
+            None => s.show_alarm,
+        })
+        .unwrap_or(0);
+
+    // The highlight glides to the picked option.
+    let target = rects[selected];
+    if s.seg.2 <= 0.0 {
+        s.seg = (target.x, target.w, 1.0);
+    }
+    let sc = settings::anim_scale();
+    let k = if sc <= 0.0 { 1.0 } else { (0.3 / sc).min(1.0) };
+    s.seg.0 += (target.x - s.seg.0) * k;
+    s.seg.1 += (target.w - s.seg.1) * k;
+    if (target.x - s.seg.0).abs() > 0.3 || (target.w - s.seg.1).abs() > 0.3 {
+        ui.animate = true;
+    } else {
+        s.seg.0 = target.x;
+        s.seg.1 = target.w;
+    }
+    ui.fill(Rect::new(s.seg.0, target.y, s.seg.1, target.h), 8.0, t.accent_soft);
+
+    for (i, ((label, kind), b)) in labels.iter().zip(rects).enumerate() {
+        let on = i == selected;
         let hov = ui.hovered(b);
-        if on {
-            ui.fill(b, 8.0, t.accent_soft);
-        }
         let fg = if on || hov { t.text } else { t.subtext };
         ui.text(label, b, 13.5, if on { SEMIBOLD } else { MEDIUM }, fg, Align::Center);
-        if ui.clicked(b) {
-            s.mode = *kind;
+        if ui.clicked(b) && !on {
+            s.seg_anim = Some((std::time::Instant::now(), if i > selected { 1.0 } else { -1.0 }));
+            s.dial = None;
+            match kind {
+                Some(k) => {
+                    s.mode = *k;
+                    s.show_alarm = false;
+                }
+                None => s.show_alarm = true,
+            }
         }
-        x += w;
     }
 }
 
-fn circle_button(ui: &mut Ui, r: Rect, icon: &'static str) -> bool {
-    let t = ui.t;
-    let hov = ui.hovered(r);
-    ui.g.fill_circle(r.cx(), r.cy(), r.w / 2.0, ui.c(if hov { t.hover } else { t.surface2 }));
-    ui.icon(icon, r.cx(), r.cy(), 18.0, t.text);
-    ui.clicked(r)
+/// Switching segments: the card under the switch fades in and slides the last few pixels from the side of
+/// the picked option. Returns the shifted rect; sets `ui.alpha` (the caller restores it).
+fn seg_transition(ui: &mut Ui, s: &mut State, r: Rect) -> Rect {
+    let Some((at, dir)) = s.seg_anim else { return r };
+    let k = (settings::anim_secs(at.elapsed().as_secs_f32()) / 0.26).clamp(0.0, 1.0);
+    if k >= 1.0 {
+        s.seg_anim = None;
+        return r;
+    }
+    ui.animate = true;
+    let e = 1.0 - (1.0 - k).powi(3);
+    ui.alpha *= 0.15 + 0.85 * e;
+    Rect::new(r.x + dir * 18.0 * (1.0 - e), r.y, r.w, r.h)
 }
+
 
 fn title_row(ui: &mut Ui, x: f32, y: f32, w: f32, icon: &'static str, label: &str) {
     let t = ui.t;
     ui.icon(icon, x + 8.5, y + 10.0, 17.0, t.text);
     ui.text(label, Rect::new(x + 24.0, y, w - 24.0, 20.0), 14.0, SEMIBOLD, t.text, Align::Left);
-}
-
-/// Stopwatch: the boxes stay (C# disables them, which looks the same) but do nothing.
-fn disabled_box(ui: &mut Ui, r: Rect, label: &str) {
-    combo_face(ui, r, label, false);
 }
 
 /// The C# combo box (Surface2, radius 7, 13 SemiBold, a thin chevron; hover dims to the hover brush) over
@@ -360,4 +470,64 @@ fn combo_face(ui: &mut Ui, r: Rect, label: &str, hov: bool) {
     let c = ui.c(t.subtext);
     ui.g.line(cx - 4.0, cy - 2.0, cx, cy + 2.0, c, 1.4);
     ui.g.line(cx, cy + 2.0, cx + 4.0, cy - 2.0, c, 1.4);
+}
+
+/// A round button; dimmed (and not clickable) when it would do nothing right now.
+fn circle_button(ui: &mut Ui, r: Rect, icon: &'static str, enabled: bool) -> bool {
+    let t = ui.t;
+    let hov = enabled && ui.hovered(r);
+    ui.g.fill_circle(r.cx(), r.cy(), r.w / 2.0, ui.c(if hov { t.hover } else { t.surface2 }));
+    ui.icon(icon, r.cx(), r.cy(), 18.0, if enabled { t.text } else { with_alpha(t.text, 0.3) });
+    let clicked = ui.clicked(r);
+    enabled && clicked
+}
+
+/// Saves a picked length (minutes, 1 … 11h 59m).
+fn set_length(target: Target, minutes: u64) {
+    let m = minutes.clamp(1, MAX_MIN);
+    match target {
+        Target::Countdown => settings::update(|x| x.timer_minutes = m as i32),
+        Target::Focus | Target::Break => {
+            let (f, b) = timers::config();
+            let (f, b) = if target == Target::Focus { (m, b) } else { (f, m) };
+            settings::update(|x| {
+                x.pomodoro_work_min = f as i32;
+                x.pomodoro_break_min = b as i32;
+            });
+            timers::set_config(f, b);
+        }
+    }
+}
+
+/// A length in a box with the shared picker field: scroll the hours or minutes, click for the dial
+/// (returned, to open).
+fn length_box(ui: &mut Ui, _s: &mut State, r: Rect, target: Target, icon: Option<&'static str>, minutes: u64) -> Option<Dial> {
+    let t = ui.t;
+    ui.fill(r, 7.0, t.surface2);
+    let mut fr = r;
+    if let Some(i) = icon {
+        ui.icon(i, r.x + 13.0, r.cy(), 11.0, t.subtext);
+        fr = r.pad(18.0, 0.0, 0.0, 0.0);
+    }
+    let (mut h, mut m) = ((minutes / 60) as u32, (minutes % 60) as u32);
+    let key = id("timer.length") ^ target as u64;
+    match picker::field(ui, key, fr, &mut h, &mut m, Mode::Length, 13.0, icon.is_none()) {
+        Field::Changed => {
+            set_length(target, (h * 60 + m) as u64);
+            None
+        }
+        Field::Open(on_minutes) => Some(Dial::new(h, m, Mode::Length, on_minutes)),
+        Field::None => None,
+    }
+}
+
+/// A lap's length: "12.4s", "1:02.4".
+fn lap_text(d: Duration) -> String {
+    let tenths = d.as_millis() / 100;
+    let (m, s, t) = (tenths / 600, tenths / 10 % 60, tenths % 10);
+    if m > 0 {
+        format!("{m}:{s:02}.{t}")
+    } else {
+        format!("{s}.{t}s")
+    }
 }

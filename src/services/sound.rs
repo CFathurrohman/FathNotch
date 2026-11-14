@@ -3,7 +3,7 @@
 
 use windows::core::{HSTRING, PCWSTR};
 use windows::Win32::Foundation::HMODULE;
-use windows::Win32::Media::Audio::{PlaySoundW, SND_ALIAS, SND_ASYNC, SND_FILENAME, SND_NODEFAULT, SND_SYSTEM};
+use windows::Win32::Media::Audio::{PlaySoundW, SND_ALIAS, SND_ASYNC, SND_FILENAME, SND_LOOP, SND_NODEFAULT, SND_SYSTEM};
 
 use crate::services::radios;
 
@@ -27,6 +27,31 @@ pub fn play(name: &str) {
         _ => {
             alias("SystemDefault");
         }
+    }
+}
+
+/// An alarm going off: Windows' alarm sound (Alarm01.wav) over and over until `stop`, else the system
+/// exclamation (once; the caller repeats it).
+pub fn alarm() -> bool {
+    let windir = std::env::var("WINDIR").unwrap_or_else(|_| r"C:\Windows".into());
+    let wav = format!(r"{windir}\Media\Alarm01.wav");
+    if std::path::Path::new(&wav).exists() {
+        let path = HSTRING::from(wav.as_str());
+        let ok = unsafe {
+            PlaySoundW(PCWSTR(path.as_ptr()), HMODULE::default(), SND_FILENAME | SND_ASYNC | SND_LOOP | SND_NODEFAULT | SND_SYSTEM).as_bool()
+        };
+        if ok {
+            return true;
+        }
+    }
+    alias("SystemExclamation");
+    false
+}
+
+/// Stops a looping alarm sound.
+pub fn stop() {
+    unsafe {
+        let _ = PlaySoundW(PCWSTR::null(), HMODULE::default(), SND_ASYNC);
     }
 }
 

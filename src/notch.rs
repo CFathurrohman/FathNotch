@@ -22,6 +22,8 @@ const EAR_OPEN: f32 = 11.0;
 const RADIUS_CLOSED: f32 = 14.0;
 const RADIUS_OPEN: f32 = 32.0;
 const RADIUS_PEEK: f32 = 28.0;
+/// How long switching tools takes (fade + slide).
+const TOOL_ANIM_SECS: f32 = 0.28;
 /// How far a capsule floats below the top edge.
 const GAP: f32 = 8.0;
 const MINI_H: f32 = 40.0;
@@ -90,6 +92,8 @@ pub struct Notch {
     pub tool: &'static str,
     /// Where Settings' back button returns.
     back: Option<&'static str>,
+    /// Switching tools: when, and the side the new one comes from (-1 left, 1 right, 0 straight up).
+    tool_anim: Option<(Instant, f32)>,
     alert: Option<Alert>,
     queue: VecDeque<Alert>,
     pub alert_until: Option<Instant>,
@@ -421,6 +425,7 @@ impl Notch {
             pinned: false,
             tool: tools::find(if s.last_tool.is_empty() { "home" } else { &s.last_tool }).id,
             back: None,
+            tool_anim: None,
             alert: None,
             queue: VecDeque::new(),
             alert_until: None,
@@ -476,6 +481,9 @@ impl Notch {
         self.width.target = w;
         self.height.target = h;
         views::shown(self.tool, &mut self.views);
+        // Opening the panel: the tool's cards come in one by one too.
+        self.tool_anim = Some((Instant::now(), 0.0));
+        self.busy = true;
     }
 
     pub fn collapse(&mut self) {
@@ -498,9 +506,23 @@ impl Notch {
     }
 
     pub fn show_tool(&mut self, id: &'static str) {
+        // Alarms live in the Timers tab (its Alarm segment).
+        let alarm = id == "alarm";
+        let id = if alarm { "timer" } else { id };
         if id == "settings" && self.tool != "settings" {
             self.back = Some(self.tool);
         }
+        // Slide in from the side of the tab bar the new tool sits on (straight up when the same / Settings).
+        let s = settings::shared();
+        let order = tools::ordered(&s.tool_order, &s.hidden_tools);
+        let at = |t: &str| order.iter().position(|x| x.id == t);
+        let dir = match (at(self.tool), at(id)) {
+            (Some(a), Some(b)) if a != b => if b > a { 1.0 } else { -1.0 },
+            _ => 0.0,
+        };
+        self.tool_anim = Some((Instant::now(), dir));
+        // Keep drawing frames from now on, or the transition would be over before the next one.
+        self.busy = true;
         self.tool = id;
         self.ui.focus = 0;
         self.ui.dropdown = 0;
@@ -509,6 +531,9 @@ impl Notch {
             settings::update(|s| s.last_tool = id.to_string());
         }
         views::shown(id, &mut self.views);
+        if alarm {
+            self.views.timer.show_alarm = true;
+        }
         if self.expanded {
             let (w, h) = self.open_size();
             self.width.target = w;
@@ -1107,6 +1132,11 @@ impl Notch {
         self.alert.is_some()
     }
 
+    /// Key of the alert on screen.
+    pub fn alert_key(&self) -> Option<&str> {
+        self.alert.as_ref().map(|a| a.key.as_str())
+    }
+
     fn draw_panel(&mut self, t: &Theme, o: &Outline, reveal: f32) {
         let s = Self::panel_scale();
         // Lay out at full size, then scale into the notch (Settings → Display "Panel size").
@@ -1154,7 +1184,39 @@ impl Notch {
         let content = Rect::new(full.x + SIDE, full.y + HEADER_H, CONTENT_W, tool_h);
         let mut next_tool = None;
         let key_tool = keyboard_tab(&mut ui, self.tool, &s_);
+        // Every tool comes in the same smooth way: it fades in while sliding the last few pixels from the
+        // side of its tab (or rising, when opened straight on it).
+        // On top, its cards and rows come in one after another, each fading in and rising into place.
+        let mut staggering = false;
+        let shift = match self.tool_anim {
+            Some((at, dir)) => {
+                let secs = settings::anim_secs(at.elapsed().as_secs_f32());
+                let k = (secs / TOOL_ANIM_SECS).clamp(0.0, 1.0);
+                ui.animate = true;
+                if self.tool != "prayer" {
+                    // Prayer has its own entrance.
+                    ui.start_stagger(secs);
+                    staggering = true;
+                }
+                if k >= 1.0 && secs > TOOL_ANIM_SECS + 0.9 {
+                    self.tool_anim = None;
+                }
+                let e = 1.0 - (1.0 - k).powi(3);
+                dir * 28.0 * (1.0 - e)
+            }
+            None => 0.0,
+        };
+        let content = Rect::new(content.x + shift, content.y, content.w, content.h);
+        if shift != 0.0 {
+            ui.push_clip(Rect::new(full.x + SIDE - 4.0, full.y + HEADER_H - 4.0, CONTENT_W + 8.0, tool_h + 8.0));
+        }
         views::draw(self.tool, &mut ui, &mut self.views, content, &mut next_tool);
+        if shift != 0.0 {
+            ui.pop_clip();
+        }
+        if staggering && !ui.end_stagger() && self.tool_anim.is_some_and(|(at, _)| settings::anim_secs(at.elapsed().as_secs_f32()) > TOOL_ANIM_SECS) {
+            self.tool_anim = None;
+        }
         if key_tool.is_some() {
             next_tool = key_tool;
         }

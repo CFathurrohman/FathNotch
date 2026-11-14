@@ -26,3 +26,5 @@ pub mod qr;
 pub mod watchers;
 pub mod appicons;
 pub mod sound;
+pub mod alarms;
+pub mod awake;

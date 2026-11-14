@@ -5,6 +5,7 @@
 pub mod icon_data;
 pub mod icons;
 
+use std::cell::Cell;
 use std::collections::HashMap;
 
 use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
@@ -250,15 +251,62 @@ pub struct Ui<'a> {
     clip: Vec<Rect>,
     /// The panel area (lists stay inside it).
     pub bounds: Rect,
+    /// Staggered entrance: seconds since the tool opened (None: off), blocks so far, their opacity, and
+    /// whether one is still coming in.
+    stagger: Option<f32>,
+    blocks: Cell<u32>,
+    stagger_alpha: Cell<f32>,
+    stagger_busy: Cell<bool>,
 }
+
+/// Staggered entrance: each block starts this much after the one before, takes this long, rising this far.
+const STAGGER_STEP: f32 = 0.045;
+const STAGGER_SECS: f32 = 0.36;
+const STAGGER_RISE: f32 = 12.0;
 
 impl<'a> Ui<'a> {
     pub fn new(g: &'a Gfx, input: &'a mut Input, st: &'a mut UiState, t: Theme, alpha: f32) -> Self {
-        Self { g, input, st, t, alpha, animate: false, wants_keyboard: false, dropdowns: Vec::new(), clip: Vec::new(), bounds: Rect::new(-1e5, -1e5, 2e5, 2e5) }
+        Self { g, input, st, t, alpha, animate: false, wants_keyboard: false, dropdowns: Vec::new(), clip: Vec::new(), bounds: Rect::new(-1e5, -1e5, 2e5, 2e5), stagger: None, blocks: Cell::new(0), stagger_alpha: Cell::new(1.0), stagger_busy: Cell::new(false) }
     }
 
     pub fn c(&self, c: Color) -> Color {
-        with_alpha(c, self.alpha)
+        with_alpha(c, self.alpha * self.stagger_alpha.get())
+    }
+
+    /// Staggered entrance (a tool just opened, `secs` ago): every card or row-sized fill starts the next
+    /// "block", and what's drawn from there fades in and rises into place a little after the one before.
+    pub fn start_stagger(&mut self, secs: f32) {
+        self.stagger = Some(secs);
+        self.blocks.set(0);
+        self.apply_stagger(0);
+    }
+
+    /// Ends the entrance: draws normally again. True while some block is still on its way in.
+    pub fn end_stagger(&mut self) -> bool {
+        self.stagger = None;
+        self.stagger_alpha.set(1.0);
+        self.g.set_offset(0.0, 0.0);
+        self.stagger_busy.replace(false)
+    }
+
+    fn block(&self, r: Rect) {
+        if self.stagger.is_some() && r.w >= 60.0 && r.h >= 24.0 {
+            let n = self.blocks.get() + 1;
+            self.blocks.set(n);
+            self.apply_stagger(n);
+        }
+    }
+
+    fn apply_stagger(&self, n: u32) {
+        let Some(t) = self.stagger else { return };
+        let delay = n.min(10) as f32 * STAGGER_STEP;
+        let k = ((t - delay) / STAGGER_SECS).clamp(0.0, 1.0);
+        if k < 1.0 {
+            self.stagger_busy.set(true);
+        }
+        let e = 1.0 - (1.0 - k).powi(3);
+        self.stagger_alpha.set(e);
+        self.g.set_offset(0.0, STAGGER_RISE * (1.0 - e));
     }
 
     pub fn mouse(&self) -> (f32, f32) {
@@ -316,10 +364,12 @@ impl<'a> Ui<'a> {
     }
 
     pub fn card(&self, r: Rect, radius: f32) {
+        self.block(r);
         self.g.fill_round(r.d2d(), radius, self.c(self.t.surface));
     }
 
     pub fn fill(&self, r: Rect, radius: f32, c: Color) {
+        self.block(r);
         self.g.fill_round(r.d2d(), radius, self.c(c));
     }
 

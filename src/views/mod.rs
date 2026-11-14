@@ -1,6 +1,7 @@
 //! The tools' contents. Each view draws into the content rectangle it's given and handles its own clicks.
 //! Views keep their state in their own `State`; data comes from `crate::model` and `crate::services`.
 
+pub mod alarm;
 pub mod calendar;
 pub mod clipboard;
 pub mod control;
@@ -10,6 +11,7 @@ pub mod note;
 pub mod notifications;
 pub mod nowplaying;
 pub mod phone;
+pub mod picker;
 pub mod prayer;
 pub mod settings;
 pub mod shelf;

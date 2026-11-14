@@ -1,13 +1,15 @@
-﻿//! To-Dos: a sidebar with today's progress ring, the filters (To do, Important, Completed) and the TickTick
+//! To-Dos: a sidebar with today's progress ring, the filters (To do, Important, Completed) and the TickTick
 //! sync line; on the right the composer ("Add a to-do, press Enter", its due chip and +) and the list as
 //! cards (check ring coloured by priority, text, due chip, star, delete on hover). A due chip opens the due
 //! panel over the list: quick picks, the next 14 days, a time (clock-face picker) and the priority.
 
-use crate::gfx::{color, mix, with_alpha, Align, BOLD, LIGHT, MEDIUM, REGULAR, SEMIBOLD};
+use crate::gfx::{color, mix, with_alpha, Align, BOLD, REGULAR, SEMIBOLD};
 use crate::notch::DAYS;
 use crate::services::todos::{self, civil_from_days, days_from_civil, local_now_secs, DueInput, Todo};
 use crate::services::{settings, ticktick};
 use crate::ui::{id, Key, Rect, Ui};
+
+use super::picker;
 
 const RED: u32 = 0xFF5A5F;
 const AMBER: u32 = 0xFFB800;
@@ -29,15 +31,6 @@ enum Editing {
     Item(String),
 }
 
-/// The clock-face time picker (as the C# ClockPicker).
-#[derive(Clone, Copy)]
-struct Clock {
-    hour: u32,
-    minute: u32,
-    minutes: bool,
-    dragging: bool,
-}
-
 #[derive(Default)]
 pub struct State {
     filter: Filter,
@@ -46,7 +39,7 @@ pub struct State {
     new_priority: i32,
     new_ready: bool,
     panel: Option<Editing>,
-    clock: Option<Clock>,
+    clock: Option<picker::Dial>,
 }
 
 fn reset_new(s: &mut State) {
@@ -117,7 +110,7 @@ fn item_due(t: &Todo) -> Option<DueInput> {
     Some((y, m, d, if t.due_all_day { None } else { Some((h, min)) }))
 }
 
-fn new_clock(current: Option<(u32, u32)>) -> Clock {
+fn new_clock(current: Option<(u32, u32)>) -> picker::Dial {
     let (hour, minute) = current.unwrap_or_else(|| {
         // The next half hour.
         let n = crate::notch::now();
@@ -125,7 +118,7 @@ fn new_clock(current: Option<(u32, u32)>) -> Clock {
         let next = (total + 30 - total % 30) % (24 * 60);
         (next / 60, next % 60)
     });
-    Clock { hour, minute, minutes: false, dragging: false }
+    picker::Dial::new(hour, minute, picker::Mode::Clock, false)
 }
 
 fn priority_color(p: i32) -> Option<u32> {
@@ -480,15 +473,22 @@ fn due_panel(ui: &mut Ui, s: &mut State, r: Rect, items: &[Todo]) {
     let inner = r.pad(12.0, 8.0, 12.0, 10.0);
 
     if let Some(mut c) = s.clock {
-        match clock_picker(ui, &mut c, Rect::new(inner.x, inner.y + 4.0, inner.w, inner.h - 4.0)) {
-            ClockResult::None => s.clock = Some(c),
-            ClockResult::Cancel => s.clock = None,
-            ClockResult::Picked(time) => {
-                let day = due.map_or(today_days(), |d| days_of(&d));
-                apply(s, Some(input_for_days(day, time)), None);
-                s.clock = None;
+        let picked = picker::dial(ui, &mut c, Rect::new(inner.x, inner.y + 4.0, inner.w, inner.h - 4.0), Some("All day"));
+        let time = match picked {
+            picker::Picked::None => {
+                s.clock = Some(c);
+                return;
             }
-        }
+            picker::Picked::Cancel => {
+                s.clock = None;
+                return;
+            }
+            picker::Picked::Set(h, m) => Some((h, m)),
+            picker::Picked::Clear => None,
+        };
+        let day = due.map_or(today_days(), |d| days_of(&d));
+        apply(s, Some(input_for_days(day, time)), None);
+        s.clock = None;
         return;
     }
 
@@ -580,137 +580,4 @@ fn due_panel(ui: &mut Ui, s: &mut State, r: Rect, items: &[Todo]) {
         }
         x = pr.right() + 4.0;
     }
-}
-
-enum ClockResult {
-    None,
-    Cancel,
-    /// Some(time) or None for all day.
-    Picked(Option<(u32, u32)>),
-}
-
-/// The clock-face picker: the hour on the dial, then the minutes; tap the big hour or minute to go back to
-/// either, AM / PM beside them. "Set time", "All day", ✕.
-fn clock_picker(ui: &mut Ui, c: &mut Clock, r: Rect) -> ClockResult {
-    let t = ui.t;
-    const DIAL: f32 = 170.0;
-    const RADIUS: f32 = 64.0;
-    let dial = Rect::new(r.x, r.y + (r.h - DIAL) / 2.0, DIAL, DIAL);
-    let (cx, cy) = (dial.cx(), dial.cy());
-
-    // Picking: press on the dial, drag, release moves on to the minutes.
-    let pick = |c: &mut Clock, p: (f32, f32)| {
-        let mut a = (p.0 - cx).atan2(cy - p.1);
-        if a < 0.0 {
-            a += std::f32::consts::TAU;
-        }
-        let slot = ((a / std::f32::consts::TAU * 12.0).round() as u32) % 12;
-        if c.minutes {
-            c.minute = slot * 5;
-        } else {
-            c.hour = slot + if c.hour >= 12 { 12 } else { 0 };
-        }
-    };
-    let dial_id = id("todos.clock.dial");
-    if ui.clicked(dial) {
-        c.dragging = true;
-        ui.st.active = dial_id;
-        pick(c, ui.mouse());
-    } else if c.dragging {
-        if ui.input.down {
-            pick(c, ui.mouse());
-            ui.animate = true;
-        } else {
-            c.dragging = false;
-            if ui.st.active == dial_id {
-                ui.st.active = 0;
-            }
-            c.minutes = true;
-        }
-    }
-
-    // Face, hand, numbers.
-    ui.g.fill_circle(cx, cy, DIAL / 2.0, ui.c(t.surface));
-    let slot = if c.minutes { c.minute as f32 / 5.0 } else { (c.hour % 12) as f32 };
-    let a = slot / 12.0 * std::f32::consts::TAU;
-    let (hx, hy) = (cx + RADIUS * a.sin(), cy - RADIUS * a.cos());
-    ui.g.line(cx, cy, hx, hy, ui.c(t.accent), 1.5);
-    ui.g.fill_circle(cx, cy, 3.0, ui.c(t.accent));
-    ui.g.fill_circle(hx, hy, 15.0, ui.c(t.accent));
-    for i in 0..12 {
-        let ang = i as f32 / 12.0 * std::f32::consts::TAU;
-        let selected = (i as f32 - slot).abs() < 0.01;
-        let label = if c.minutes { format!("{:02}", i * 5) } else { (if i == 0 { 12 } else { i }).to_string() };
-        let (lx, ly) = (cx + RADIUS * ang.sin(), cy - RADIUS * ang.cos());
-        ui.text(
-            &label,
-            Rect::new(lx - 15.0, ly - 9.0, 30.0, 18.0),
-            12.5,
-            if selected { SEMIBOLD } else { REGULAR },
-            if selected { t.on_accent } else { t.text },
-            Align::Center,
-        );
-    }
-
-    // Side: HH:MM, AM/PM, hint, buttons.
-    let sx = dial.right() + 22.0;
-    let big_h = 46.0;
-    let hint_h = 2.0 + 16.0 + 12.0;
-    let buttons_h = 30.0;
-    let top = r.y + (r.h - (big_h + hint_h + buttons_h)) / 2.0;
-    let hour12 = if c.hour % 12 == 0 { 12 } else { c.hour % 12 };
-    let hs = format!("{hour12:02}");
-    let ms = format!("{:02}", c.minute);
-    let hw = ui.measure(&hs, 34.0, LIGHT);
-    let colon_w = ui.measure(":", 34.0, LIGHT);
-    let mw = ui.measure(&ms, 34.0, LIGHT);
-    let hour_r = Rect::new(sx, top, hw, big_h);
-    let colon_r = Rect::new(hour_r.right() + 2.0, top, colon_w, big_h);
-    let min_r = Rect::new(colon_r.right() + 2.0, top, mw, big_h);
-    ui.text(&hs, hour_r, 34.0, LIGHT, if c.minutes { t.subtext } else { t.accent }, Align::Left);
-    ui.text(":", colon_r, 34.0, LIGHT, t.subtext, Align::Left);
-    ui.text(&ms, min_r, 34.0, LIGHT, if c.minutes { t.accent } else { t.subtext }, Align::Left);
-    if ui.clicked(hour_r) {
-        c.minutes = false;
-    }
-    if ui.clicked(min_r) {
-        c.minutes = true;
-    }
-    let am = Rect::new(min_r.right() + 12.0, top + big_h / 2.0 - 18.0, 24.0, 16.0);
-    let pm = Rect::new(am.x, am.bottom() + 4.0, 24.0, 16.0);
-    ui.text("AM", am, 12.0, SEMIBOLD, if c.hour < 12 { t.accent } else { t.subtext }, Align::Left);
-    ui.text("PM", pm, 12.0, SEMIBOLD, if c.hour >= 12 { t.accent } else { t.subtext }, Align::Left);
-    if ui.clicked(am) && c.hour >= 12 {
-        c.hour -= 12;
-    }
-    if ui.clicked(pm) && c.hour < 12 {
-        c.hour += 12;
-    }
-    let hint = if c.minutes { "Pick the minutes" } else { "Pick the hour" };
-    ui.text(hint, Rect::new(sx + 1.0, top + big_h + 2.0, 200.0, 16.0), 12.0, REGULAR, t.subtext, Align::Left);
-
-    let by = top + big_h + hint_h;
-    let set_w = ui.measure("Set time", 13.0, SEMIBOLD) + 28.0;
-    let set = Rect::new(sx, by, set_w, 30.0);
-    let hov = ui.hovered(set);
-    ui.fill(set, 8.0, with_alpha(t.accent, if hov { 0.85 } else { 1.0 }));
-    ui.text("Set time", set, 13.0, SEMIBOLD, t.on_accent, Align::Center);
-    let all_w = ui.measure("All day", 13.0, MEDIUM) + 28.0;
-    let all = Rect::new(set.right() + 6.0, by, all_w, 30.0);
-    let hov = ui.hovered(all);
-    ui.fill(all, 8.0, with_alpha(t.surface2, if hov { 0.85 } else { 1.0 }));
-    ui.text("All day", all, 13.0, MEDIUM, t.text, Align::Center);
-    let cancel = Rect::new(all.right() + 4.0, by + 1.0, 28.0, 28.0);
-    let x_clicked = ui.icon_button(cancel, "XMark", 13.0, t.subtext);
-
-    if ui.clicked(set) {
-        return ClockResult::Picked(Some((c.hour, c.minute)));
-    }
-    if ui.clicked(all) {
-        return ClockResult::Picked(None);
-    }
-    if x_clicked {
-        return ClockResult::Cancel;
-    }
-    ClockResult::None
 }

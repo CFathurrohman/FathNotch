@@ -8,17 +8,17 @@ use std::time::Instant;
 use crate::gfx::{with_alpha, Align, BOLD, LIGHT, REGULAR, SEMIBOLD};
 use crate::notch::{DAYS, MONTHS};
 use crate::services::{calendar, todos};
-use crate::ui::{id, ButtonStyle, Key, Rect, Ui};
+use crate::ui::{id, Key, Rect, Ui};
+
+use super::picker;
 
 const TIME_ID: u64 = id("calendar.time");
 const TITLE_ID: u64 = id("calendar.title");
-const DIAL_ID: u64 = id("calendar.dial");
+const DIAL_ID: u64 = id("picker.dial");
 /// While the picker is open it poses as an open dropdown, so Esc closes the picker instead of the notch.
 const PICKER_ID: u64 = id("calendar.picker");
 const LIST_ID: u64 = id("calendar.list");
 
-const DIAL_SIZE: f32 = 180.0;
-const DIAL_RADIUS: f32 = 68.0;
 const ROW_H: f32 = 36.0;
 
 pub struct State {
@@ -28,9 +28,7 @@ pub struct State {
     /// The day the view was last drawn on (rolls the selection over at midnight).
     rendered_today: i64,
     picker: bool,
-    pick_hour: u32,
-    pick_minute: u32,
-    picking_minutes: bool,
+    dial: picker::Dial,
     /// The time box text that failed to parse (red until edited).
     time_err: Option<String>,
     /// Month change: when, and from which side (-1 / 1).
@@ -57,9 +55,7 @@ impl Default for State {
             selected: t,
             rendered_today: t,
             picker: false,
-            pick_hour: 9,
-            pick_minute: 0,
-            picking_minutes: false,
+            dial: picker::Dial::new(9, 0, picker::Mode::Clock, false),
             time_err: None,
             slide: None,
             cache: None,
@@ -516,18 +512,16 @@ fn add_event(ui: &mut Ui, s: &mut State) {
 // ---------------------------------------------------------------- time picker
 
 fn open_picker(ui: &mut Ui, s: &mut State) {
-    if let Some((h, m)) = calendar::parse_time(&ui.field_text(TIME_ID)) {
-        s.pick_hour = h;
-        s.pick_minute = m;
+    let (h, m) = if let Some((h, m)) = calendar::parse_time(&ui.field_text(TIME_ID)) {
+        (h, m)
     } else {
         // The next half hour.
         let n = crate::notch::now();
         let total = n.hour as u32 * 60 + n.minute as u32;
         let next = (total + 30 - total % 30) % (24 * 60);
-        s.pick_hour = next / 60;
-        s.pick_minute = next % 60;
-    }
-    s.picking_minutes = false;
+        (next / 60, next % 60)
+    };
+    s.dial = picker::Dial::new(h, m, picker::Mode::Clock, false);
     s.picker = true;
     ui.st.focus = 0;
     ui.st.dropdown = PICKER_ID;
@@ -552,101 +546,24 @@ fn picker(ui: &mut Ui, s: &mut State, area: Rect) {
         return;
     }
     ui.fill(area, 0.0, t.pill);
-
-    // Dial.
-    let dial = Rect::new(area.x, area.cy() - DIAL_SIZE / 2.0, DIAL_SIZE, DIAL_SIZE);
-    let (cx, cy) = (dial.cx(), dial.cy());
-    if ui.clicked(dial) {
-        ui.st.active = DIAL_ID;
-    }
-    if ui.st.active == DIAL_ID {
-        ui.animate = true;
-        let (mx, my) = ui.mouse();
-        if !mx.is_nan() {
-            let mut a = (mx - cx).atan2(cy - my);
-            if a < 0.0 {
-                a += std::f32::consts::TAU;
-            }
-            let slot = (a / std::f32::consts::TAU * 12.0).round() as u32 % 12;
-            if s.picking_minutes {
-                s.pick_minute = slot * 5;
-            } else {
-                s.pick_hour = slot + if s.pick_hour >= 12 { 12 } else { 0 };
-            }
+    let mut c = s.dial;
+    let picked = picker::dial(ui, &mut c, area, Some("All day"));
+    s.dial = c;
+    match picked {
+        picker::Picked::None => {}
+        picker::Picked::Cancel => close_picker(ui, s),
+        picker::Picked::Set(h, m) => {
+            ui.set_field_text(TIME_ID, &format!("{h:02}:{m:02}"));
+            close_picker(ui, s);
+            s.focus_title = true;
+            ui.animate = true;
         }
-        if !ui.input.down {
-            ui.st.active = 0;
-            // Picking an hour moves straight on to minutes, like a phone clock.
-            s.picking_minutes = true;
+        picker::Picked::Clear => {
+            ui.set_field_text(TIME_ID, "");
+            close_picker(ui, s);
+            s.focus_title = true;
+            ui.animate = true;
         }
     }
-    ui.g.fill_circle(cx, cy, DIAL_SIZE / 2.0, ui.c(t.surface));
-    let slot = if s.picking_minutes { s.pick_minute as f32 / 5.0 } else { (s.pick_hour % 12) as f32 };
-    let a = slot / 12.0 * std::f32::consts::TAU;
-    let (ax, ay) = (cx + DIAL_RADIUS * a.sin(), cy - DIAL_RADIUS * a.cos());
-    ui.g.line(cx, cy, ax, ay, ui.c(t.accent), 1.5);
-    ui.g.fill_circle(cx, cy, 3.0, ui.c(t.accent));
-    ui.g.fill_circle(ax, ay, 15.0, ui.c(t.accent));
-    for i in 0..12 {
-        let an = i as f32 / 12.0 * std::f32::consts::TAU;
-        let label = if s.picking_minutes { format!("{:02}", i * 5) } else { (if i == 0 { 12 } else { i }).to_string() };
-        let on = (i as f32 - slot).abs() < 0.01;
-        let lr = Rect::new(cx + DIAL_RADIUS * an.sin() - 15.0, cy - DIAL_RADIUS * an.cos() - 9.0, 30.0, 18.0);
-        ui.text(&label, lr, 12.0, if on { SEMIBOLD } else { REGULAR }, if on { t.on_accent } else { t.text }, Align::Center);
-    }
-
-    // Read-out: HH : MM  AM/PM, hint, buttons.
-    let x = dial.right() + 26.0;
-    let y = area.cy() - 52.0;
-    let hour12 = if s.pick_hour % 12 == 0 { 12 } else { s.pick_hour % 12 };
-    let hh = format!("{hour12:02}");
-    let mm = format!("{:02}", s.pick_minute);
-    let hw = ui.measure(&hh, 34.0, LIGHT);
-    let cw = ui.measure(":", 34.0, LIGHT);
-    let mw = ui.measure(&mm, 34.0, LIGHT);
-    let hr = Rect::new(x, y, hw + 2.0, 48.0);
-    let colon = Rect::new(hr.right() + 2.0, y, cw + 2.0, 46.0);
-    let mr = Rect::new(colon.right() + 2.0, y, mw + 2.0, 48.0);
-    ui.text(&hh, hr, 34.0, LIGHT, if s.picking_minutes { t.subtext } else { t.accent }, Align::Left);
-    ui.text(":", colon, 34.0, LIGHT, t.subtext, Align::Left);
-    ui.text(&mm, mr, 34.0, LIGHT, if s.picking_minutes { t.accent } else { t.subtext }, Align::Left);
-    if ui.clicked(hr) {
-        s.picking_minutes = false;
-    }
-    if ui.clicked(mr) {
-        s.picking_minutes = true;
-    }
-    let am = Rect::new(mr.right() + 12.0, y + 6.0, 26.0, 16.0);
-    let pm = Rect::new(am.x, am.bottom() + 4.0, 26.0, 16.0);
-    ui.text("AM", am, 12.0, SEMIBOLD, if s.pick_hour < 12 { t.accent } else { t.subtext }, Align::Left);
-    ui.text("PM", pm, 12.0, SEMIBOLD, if s.pick_hour >= 12 { t.accent } else { t.subtext }, Align::Left);
-    if ui.clicked(am) && s.pick_hour >= 12 {
-        s.pick_hour -= 12;
-    }
-    if ui.clicked(pm) && s.pick_hour < 12 {
-        s.pick_hour += 12;
-    }
-    ui.text(if s.picking_minutes { "Pick the minutes" } else { "Pick the hour" }, Rect::new(x + 1.0, y + 48.0, 200.0, 16.0), 12.0, REGULAR, t.subtext, Align::Left);
-
-    let by = y + 48.0 + 16.0 + 14.0;
-    let set = Rect::new(x, by, 76.0, 28.0);
-    let all = Rect::new(set.right() + 6.0, by, 64.0, 28.0);
-    let cancel = Rect::new(all.right() + 4.0, by, 28.0, 28.0);
-    if ui.button(set, "Set time", ButtonStyle::Accent) {
-        let v = format!("{:02}:{:02}", s.pick_hour, s.pick_minute);
-        ui.set_field_text(TIME_ID, &v);
-        close_picker(ui, s);
-        s.focus_title = true;
-        ui.animate = true;
-    } else if ui.button(all, "All day", ButtonStyle::Normal) {
-        ui.set_field_text(TIME_ID, "");
-        close_picker(ui, s);
-        s.focus_title = true;
-        ui.animate = true;
-    } else if ui.icon_button(cancel, "XMark", 13.0, t.subtext) {
-        close_picker(ui, s);
-    }
-    // Swallow other clicks on the overlay so the agenda underneath doesn't get them.
-    let _ = ui.clicked(area);
 }
 

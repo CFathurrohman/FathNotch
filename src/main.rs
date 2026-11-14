@@ -377,6 +377,14 @@ fn prepare(n: &mut Notch) {
     for a in model::take_alerts() {
         n.push_alert(a);
     }
+    // A ringing alarm's pop-up stays until Snooze or Stop (and comes back if the panel was open).
+    let ringing = services::alarms::ringing();
+    let showing_alarm = n.alert_key().is_some_and(|k| k.starts_with("alarm:"));
+    match ringing {
+        None if showing_alarm => n.end_alert(),
+        Some(a) if !showing_alarm && !n.expanded() && !n.has_alert() => n.push_alert(model::alarm_alert(&a)),
+        _ => {}
+    }
     if let Some(np) = model::now_playing() {
         if let Some(art) = &np.art {
             n.gfx.load_image(np.art_id, art);
@@ -631,6 +639,10 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                     let app = if dismiss { None } else { with(|n| n.alert_app()).flatten() };
                     with(|n| {
                         if dismiss {
+                            // × on a ringing alarm snoozes it (it never just goes quiet).
+                            if n.alert_key().is_some_and(|k| k.starts_with("alarm:")) {
+                                services::alarms::snooze();
+                            }
                             n.end_alert();
                         } else if let Some((id, name)) = app {
                             n.end_alert();
@@ -971,6 +983,10 @@ fn main() -> Result<()> {
         }
         SetTimer(hwnd, TIMER_EYES, (settings::get().idle_eyes_every_sec.max(20) as u32) * 1000, None);
         model::start();
+        // Control → Awake survives restarts (on the window thread, which lives as long as the app).
+        if shot.is_none() && settings::get().keep_awake {
+            services::awake::apply(true);
+        }
         settings::on_change(|| bg::post(bg::WM_SETTINGS));
         place(hwnd);
         update_visibility(hwnd);
@@ -1014,7 +1030,7 @@ fn main() -> Result<()> {
                 // the peeking cat eyes (FATHNOTCH_SHOT_WAIT picks the moment)
                 with(|n| n.show_eyes());
             } else if !demo.is_empty() {
-                let id = if demo == "settings" { "settings" } else { tools::find(&demo).id };
+                let id = match demo.as_str() { "settings" => "settings", "alarm" => "alarm", d => tools::find(d).id };
                 let r = with(|n| {
                     n.expand();
                     n.pinned = true;

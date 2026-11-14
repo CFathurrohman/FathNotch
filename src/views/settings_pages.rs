@@ -324,6 +324,7 @@ pub fn display(p: &mut Pg) {
             R::c("Tab bar", "A compact row of tool icons along the bottom of the open panel (easiest to navigate), or page dots.", 140.0),
             R::t("Clock in the panel", "Today's date and the time in the middle of the open panel's header."),
             R::t("Lyric glow", "The closed notch is plain black; while a synced lyric line shows, a soft glow in the song's colour rises from its bottom edge."),
+            R::c("Animations", "How fast tabs slide in and their cards appear one by one. Off shows everything at once.", 140.0),
         ],
     );
     let styles = ["Notch".to_string(), "Capsule".into()];
@@ -333,6 +334,8 @@ pub fn display(p: &mut Pg) {
     p.pick(rr[2], "set.tabstyle", &["Icons", "Dots"], &tabs, &s.tab_style, 0, |x, v| x.tab_style = v);
     p.tog(rr[3], s.header_clock, |x, v| x.header_clock = v);
     p.tog(rr[4], s.rest_glow, |x, v| x.rest_glow = v);
+    let speeds = ["Off".to_string(), "Fast".into(), "Normal".into(), "Slow".into()];
+    p.pick(rr[5], "set.anim", &["Off", "Fast", "Normal", "Slow"], &speeds, &s.anim_speed, 2, |x, v| x.anim_speed = v);
 
     let rr = p.card(
         Some("SIZE"),

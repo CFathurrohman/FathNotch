@@ -141,7 +141,7 @@ pub fn draw(ui: &mut Ui, s: &mut State, r: Rect, go: &mut Option<&'static str>) 
     if line.len() < SLOTS {
         return;
     }
-    let intro = s.shown_at.map_or(10.0, |a| a.elapsed().as_secs_f32());
+    let intro = s.shown_at.map_or(10.0, |a| crate::services::settings::anim_secs(a.elapsed().as_secs_f32()));
     ui.animate = true; // the sun breathes while the tab is open
 
     let body = r.pad(18.0, 0.0, 18.0, 4.0);
@@ -217,7 +217,7 @@ fn arc(ui: &mut Ui, s: &mut State, r: Rect, line: &[Slot], now: f64, intro: f32)
     // Sliding one step left after a prayer time passed.
     let mut shift = 0.0;
     if let Some(at) = s.slide_at {
-        let p = ease_out(at.elapsed().as_secs_f32() / 0.8);
+        let p = ease_out(crate::services::settings::anim_secs(at.elapsed().as_secs_f32()) / 0.8);
         if p >= 1.0 {
             s.slide_at = None;
         } else {

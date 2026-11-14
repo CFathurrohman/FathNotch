@@ -95,6 +95,8 @@ pub struct Settings {
     /// Control → Silent: notifications are collected in the Notifications tab but don't pop out, and
     /// notification sounds are off.
     pub silent_mode: bool,
+    /// Control → Awake: keep the PC and screen from sleeping.
+    pub keep_awake: bool,
 
     /// Idle closed notch: "clock", "date", "prayer", "weather", ...
     pub idle_items: Vec<String>,
@@ -118,6 +120,8 @@ pub struct Settings {
     pub tab_style: String,
     pub look_version: i32,
     pub header_clock: bool,
+    /// How fast the panel animates: "Off" | "Fast" | "Normal" | "Slow".
+    pub anim_speed: String,
     pub rest_glow: bool,
     pub idle_eyes: bool,
     pub idle_eyes_every_sec: i32,
@@ -231,6 +235,7 @@ impl Default for Settings {
             notify_seen_apps: vec![],
             notify_keep_history: true,
             silent_mode: false,
+            keep_awake: false,
             idle_items: vec![s("clock")],
             idle_layout: s("Rotate"),
             idle_rotate_sec: 8,
@@ -245,6 +250,7 @@ impl Default for Settings {
             tab_style: s("Icons"),
             look_version: 0,
             header_clock: true,
+            anim_speed: "Normal".into(),
             rest_glow: true,
             idle_eyes: true,
             idle_eyes_every_sec: 45,
@@ -321,6 +327,27 @@ pub fn first_run() -> bool {
 /// A copy of the current settings.
 pub fn get() -> Settings {
     (**cell().lock().unwrap_or_else(|e| e.into_inner())).clone()
+}
+
+/// Settings → Display "Animations" as a length factor: Fast 0.55, Normal 1, Slow 1.8; Off 0 (no animation).
+pub fn anim_scale() -> f32 {
+    match shared().anim_speed.as_str() {
+        "Off" => 0.0,
+        "Fast" => 0.55,
+        "Slow" => 1.8,
+        _ => 1.0,
+    }
+}
+
+/// Seconds since an animation started, on the animation clock: run faster or slower by the Animations
+/// setting (Off: as if long finished).
+pub fn anim_secs(real: f32) -> f32 {
+    let k = anim_scale();
+    if k <= 0.0 {
+        1e6
+    } else {
+        real / k
+    }
 }
 
 /// The current settings without copying them (cheap: for code that runs every frame).
