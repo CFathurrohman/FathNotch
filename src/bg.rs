@@ -22,7 +22,12 @@ pub fn init(hwnd: HWND) {
 }
 
 /// Asks the window to redraw (safe from any thread).
+#[track_caller]
 pub fn refresh() {
+    if std::env::var_os("FATHNOTCH_STATS").is_some() {
+        let at = std::panic::Location::caller();
+        crate::stat_at(at.file(), at.line());
+    }
     let h = WINDOW.load(Ordering::Relaxed);
     if h != 0 {
         unsafe {
@@ -53,5 +58,39 @@ pub fn spawn<F: FnOnce() + Send + 'static>(job: F) {
         job();
         refresh();
         unsafe { CoUninitialize() };
+    });
+}
+
+/// Like `spawn`, for things set while a slider is dragged (volume, brightness): at most one job per `key`
+/// runs at a time, and while it runs only the newest waiting one is kept. A slow device (a Bluetooth
+/// headset mic, a DDC/CI monitor) then gets the latest value instead of a pile of threads.
+pub fn latest<F: FnOnce() + Send + 'static>(key: u64, job: F) {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    type Job = Box<dyn FnOnce() + Send>;
+    // key → (a worker is running, the job waiting for it)
+    static JOBS: Mutex<Option<HashMap<u64, (bool, Option<Job>)>>> = Mutex::new(None);
+    {
+        let mut g = JOBS.lock().unwrap_or_else(|e| e.into_inner());
+        let e = g.get_or_insert_with(HashMap::new).entry(key).or_insert((false, None));
+        e.1 = Some(Box::new(job));
+        if e.0 {
+            return; // the running worker picks it up
+        }
+        e.0 = true;
+    }
+    spawn(move || loop {
+        let next = {
+            let mut g = JOBS.lock().unwrap_or_else(|e| e.into_inner());
+            let e = g.get_or_insert_with(HashMap::new).entry(key).or_insert((true, None));
+            match e.1.take() {
+                Some(j) => j,
+                None => {
+                    e.0 = false;
+                    return;
+                }
+            }
+        };
+        next();
     });
 }

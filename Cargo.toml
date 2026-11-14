@@ -48,6 +48,7 @@ features = [
     "Win32_Graphics_Imaging",
     "Win32_Media_Audio",
     "Win32_Media_Audio_Endpoints",
+    "Win32_Media_KernelStreaming", # Bluetooth audio: one-shot reconnect / disconnect (services/audio.rs)
     "Win32_NetworkManagement_IpHelper", # system: network counters (GetIfTable2)
     "Win32_NetworkManagement_Ndis",
     "Win32_Security",

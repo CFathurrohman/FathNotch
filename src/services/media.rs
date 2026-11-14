@@ -179,6 +179,7 @@ fn update(session: &Session, f: impl FnOnce(&mut NowPlaying)) {
         f(now);
     }
     drop(s);
+    crate::stat("media update");
     crate::bg::refresh();
 }
 

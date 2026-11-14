@@ -50,6 +50,7 @@ pub fn clock_secs() -> f64 {
 
 /// Queues an alert for the notch. Notification-style alerts (`Full`) also land in the Notifications tab
 /// (Windows' own are recorded by the watcher), and while Silent is on they're only recorded, not shown.
+#[track_caller]
 pub fn push_alert(a: Alert) {
     if let AlertKind::Full { icon, title, sub, open, .. } = &a.kind {
         if !a.key.starts_with("app:") {
@@ -79,6 +80,7 @@ pub fn take_alerts() -> Vec<Alert> {
 }
 
 fn on_volume(level: f32, muted: bool) {
+    crate::stat("on_volume");
     if !settings::shared().volume_hud {
         return;
     }

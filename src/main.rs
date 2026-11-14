@@ -377,6 +377,16 @@ fn prepare(n: &mut Notch) {
     for a in model::take_alerts() {
         n.push_alert(a);
     }
+    // Safety net: "held" while neither mouse button is actually down (a release we never heard of).
+    // Screenshot runs hold the button by script, so they're left alone.
+    if n.input.down && std::env::var_os("FATHNOTCH_SHOT").is_none() {
+        use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
+        let held = |k: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY| unsafe { GetAsyncKeyState(k.0 as i32) } as u16 & 0x8000 != 0;
+        if !held(VK_LBUTTON) && !held(VK_RBUTTON) {
+            n.input.down = false;
+            n.input.released = true;
+        }
+    }
     // A ringing alarm's pop-up stays until Snooze or Stop (and comes back if the panel was open).
     let ringing = services::alarms::ringing();
     let showing_alarm = n.alert_key().is_some_and(|k| k.starts_with("alarm:"));
@@ -669,6 +679,18 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                         n.input.down = true;
                     } else {
                         n.input.right_pressed = true;
+                    }
+                });
+                redraw(hwnd);
+                LRESULT(0)
+            }
+            // Lost the mouse (another window took it): the button counts as released, or a held slider
+            // would keep going after the button is up.
+            WM_CAPTURECHANGED => {
+                with(|n| {
+                    if n.input.down {
+                        n.input.down = false;
+                        n.input.released = true;
                     }
                 });
                 redraw(hwnd);
@@ -1169,5 +1191,34 @@ fn main() -> Result<()> {
         }
         let _ = Shell_NotifyIconW(NIM_DELETE, &tray);
         Ok(())
+    }
+}
+
+/// Dev aid (FATHNOTCH_STATS): counts calls by name and logs every 100th, to find what floods redraws.
+pub fn stat(name: &'static str) {
+    if std::env::var_os("FATHNOTCH_STATS").is_none() {
+        return;
+    }
+    static COUNTS: std::sync::Mutex<Option<std::collections::HashMap<&'static str, u64>>> = std::sync::Mutex::new(None);
+    let mut g = COUNTS.lock().unwrap_or_else(|e| e.into_inner());
+    let n = g.get_or_insert_with(Default::default).entry(name).or_insert(0);
+    *n += 1;
+    if *n % 100 == 1 {
+        let c = *n;
+        drop(g);
+        log(&format!("stat {name}: {c}"));
+    }
+}
+
+/// `stat` for a source location (who asked for a redraw).
+pub fn stat_at(file: &'static str, line: u32) {
+    static COUNTS: std::sync::Mutex<Option<std::collections::HashMap<(&'static str, u32), u64>>> = std::sync::Mutex::new(None);
+    let mut g = COUNTS.lock().unwrap_or_else(|e| e.into_inner());
+    let n = g.get_or_insert_with(Default::default).entry((file, line)).or_insert(0);
+    *n += 1;
+    if *n % 200 == 1 {
+        let c = *n;
+        drop(g);
+        log(&format!("refresh from {file}:{line}: {c}"));
     }
 }

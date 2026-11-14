@@ -582,3 +582,107 @@ mod tests {
         std::thread::sleep(Duration::from_millis(500));
     }
 }
+
+// ---------------------------------------------------------------- Bluetooth audio connect
+
+/// Bluetooth audio driver property set: KSPROPERTY_ONESHOT_RECONNECT (0) / _DISCONNECT (1).
+const KSPROPSETID_BT_AUDIO: GUID = GUID::from_u128(0x7fa06c40_b8f6_4c7e_8556_e8c33a12e54d);
+
+/// Connects (or disconnects) a paired Bluetooth audio device (headphones, earbuds, a speaker) right away,
+/// the way the Bluetooth quick setting does: a one-shot reconnect on the driver behind its audio endpoints.
+/// `name` is the device's Bluetooth name; endpoints are matched by it ("Headphones (WH-1000XM4)").
+/// False when no Bluetooth audio endpoint of that name answered (not an audio device, or not in range).
+pub fn bt_connect(name: &str, connect: bool) -> bool {
+    use windows::Win32::Media::Audio::{IConnector, IDeviceTopology, IPart, eAll, DEVICE_STATEMASK_ALL};
+    use windows::Win32::Media::KernelStreaming::{IKsControl, KSIDENTIFIER, KSIDENTIFIER_0, KSIDENTIFIER_0_0, KSPROPERTY_TYPE_GET};
+
+    let _com = ComScope::new();
+    let Some(e) = enumerator() else { return false };
+    let want = name.trim().to_lowercase();
+    if want.is_empty() {
+        return false;
+    }
+    let mut done: Vec<String> = Vec::new();
+    let mut ok = false;
+    unsafe {
+        let Ok(list) = e.EnumAudioEndpoints(eAll, DEVICE_STATE(DEVICE_STATEMASK_ALL)) else { return false };
+        let n = list.GetCount().unwrap_or(0);
+        for i in 0..n {
+            let Ok(dev) = list.Item(i) else { continue };
+            if !friendly_name(&dev).to_lowercase().contains(&want) {
+                continue;
+            }
+            let Ok(topo) = dev.Activate::<IDeviceTopology>(CLSCTX_ALL, None) else { continue };
+            let Ok(conn) = topo.GetConnector(0) else { continue };
+            let Ok(other): windows::core::Result<IConnector> = conn.GetConnectedTo() else { continue };
+            let Ok(part) = other.cast::<IPart>() else { continue };
+            // The driver (KS filter) behind the endpoint must be a Bluetooth one; each is poked once.
+            let filter = part.GetTopologyObject().and_then(|t| t.GetDeviceId()).map(|p| take_pwstr(p)).unwrap_or_default();
+            let lower = filter.to_lowercase();
+            if !(lower.contains("bthenum") || lower.contains("bthhfenum") || lower.contains("bthledevice")) || done.contains(&lower) {
+                continue;
+            }
+            done.push(lower);
+            // The command goes to the driver's own device (the KS filter), not to the topology part.
+            let Ok(filter_dev) = e.GetDevice(&windows::core::HSTRING::from(filter.as_str())) else { continue };
+            let Ok(ks) = filter_dev.Activate::<IKsControl>(CLSCTX_ALL, None) else { continue };
+            let prop = KSIDENTIFIER {
+                Anonymous: KSIDENTIFIER_0 {
+                    Anonymous: KSIDENTIFIER_0_0 { Set: KSPROPSETID_BT_AUDIO, Id: if connect { 0 } else { 1 }, Flags: KSPROPERTY_TYPE_GET },
+                },
+            };
+            let mut ret = 0u32;
+            if ks.KsProperty(&prop, std::mem::size_of::<KSIDENTIFIER>() as u32, std::ptr::null_mut(), 0, &mut ret).is_ok() {
+                ok = true;
+            }
+        }
+    }
+    ok
+}
+
+#[cfg(test)]
+mod bt_probe {
+    use super::*;
+
+    /// Real round trip on one device: FATHNOTCH_BT=<name> cargo test --release bt_round -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn bt_round() {
+        let name = std::env::var("FATHNOTCH_BT").expect("FATHNOTCH_BT");
+        let state = || crate::services::radios::paired().into_iter().find(|b| b.name.contains(&name)).map(|b| b.connected);
+        println!("before: {:?}", state());
+        println!("disconnect: {}", bt_connect(&name, false));
+        std::thread::sleep(std::time::Duration::from_secs(6));
+        println!("after disconnect: {:?}", state());
+        println!("connect: {}", bt_connect(&name, true));
+        std::thread::sleep(std::time::Duration::from_secs(8));
+        println!("after connect: {:?}", state());
+    }
+
+    /// Dry run of `bt_connect`: prints every audio endpoint and how far the Bluetooth path gets.
+    /// cargo test --release bt_probe -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn probe() {
+        use windows::Win32::Media::Audio::{IConnector, IDeviceTopology, IPart, eAll, DEVICE_STATEMASK_ALL};
+        use windows::Win32::Media::KernelStreaming::IKsControl;
+        let _com = ComScope::new();
+        let e = enumerator().expect("enumerator");
+        unsafe {
+            let list = e.EnumAudioEndpoints(eAll, DEVICE_STATE(DEVICE_STATEMASK_ALL)).expect("enum");
+            for i in 0..list.GetCount().unwrap_or(0) {
+                let Ok(dev) = list.Item(i) else { continue };
+                let name = friendly_name(&dev);
+                let state = dev.GetState().map(|s| s.0).unwrap_or(99);
+                print!("[{state}] {name}: ");
+                let topo = match dev.Activate::<IDeviceTopology>(CLSCTX_ALL, None) { Ok(t) => t, Err(e) => { println!("topology {e}"); continue } };
+                let conn = match topo.GetConnector(0) { Ok(c) => c, Err(e) => { println!("connector {e}"); continue } };
+                let other: IConnector = match conn.GetConnectedTo() { Ok(c) => c, Err(e) => { println!("connectedTo {e}"); continue } };
+                let part = match other.cast::<IPart>() { Ok(p) => p, Err(e) => { println!("part {e}"); continue } };
+                let filter = part.GetTopologyObject().and_then(|t| t.GetDeviceId()).map(|p| take_pwstr(p)).unwrap_or_default();
+                let ks = e.GetDevice(&windows::core::HSTRING::from(filter.as_str())).and_then(|d| d.Activate::<IKsControl>(CLSCTX_ALL, None));
+                println!("filter={filter} ks={:?}", ks.map(|_| true));
+            }
+        }
+    }
+}

@@ -395,3 +395,26 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod timing {
+    /// How long each read takes: cargo test --release radios_timing -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn radios_timing() {
+        let t = |name: &str, f: &dyn Fn()| {
+            let s = std::time::Instant::now();
+            f();
+            println!("{name}: {} ms", s.elapsed().as_millis());
+        };
+        for _ in 0..2 {
+            t("wifi", &|| drop(super::wifi()));
+            t("bluetooth", &|| drop(super::bluetooth()));
+            t("hotspot", &|| drop(super::hotspot()));
+            t("connected_name", &|| drop(super::connected_name()));
+            t("paired", &|| drop(super::paired()));
+            t("audio devices", &|| drop(crate::services::audio::devices(false)));
+            t("audio sessions", &|| drop(crate::services::audio::sessions()));
+        }
+    }
+}

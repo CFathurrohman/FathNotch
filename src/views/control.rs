@@ -44,6 +44,8 @@ struct Data {
     join: Option<(String, Join)>,
     /// Tiles switching ("Turning on…"): wifi, bluetooth, hotspot.
     busy: [Option<bool>; 3],
+    /// A Bluetooth device being connected (true) or disconnected (false), by name.
+    bt_busy: Option<(String, bool)>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -63,8 +65,21 @@ pub struct State {
 
 /// Re-reads the system. Displays only when `displays` (C# loads them once per opening: DDC/CI is slow).
 fn refresh(data: &Arc<Mutex<Data>>, displays: bool) {
+    // One at a time: reading the radios can stall for seconds (right after a Bluetooth device comes or
+    // goes), and a new read every 2.5 s would pile up threads and keep the CPU busy.
+    static RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if RUNNING.swap(true, std::sync::atomic::Ordering::AcqRel) {
+        return;
+    }
     let d = data.clone();
     bg::spawn(move || {
+        struct Done;
+        impl Drop for Done {
+            fn drop(&mut self) {
+                RUNNING.store(false, std::sync::atomic::Ordering::Release);
+            }
+        }
+        let _done = Done;
         let found = if displays { Some(brightness::displays()) } else { None };
         let n = Data {
             loaded: true,
@@ -90,6 +105,7 @@ fn refresh(data: &Arc<Mutex<Data>>, displays: bool) {
             paired_loading: keep.paired_loading,
             join: keep.join,
             busy: keep.busy,
+            bt_busy: keep.bt_busy,
             displays: found.unwrap_or(keep.displays),
             loaded: displays || keep.loaded,
             wifi: keep.busy[0].or(n.wifi),
@@ -344,9 +360,20 @@ fn load_networks(s: &State, delay_ms: u64) {
 }
 
 fn load_paired(s: &State, delay_ms: u64) {
+    static RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if RUNNING.swap(true, std::sync::atomic::Ordering::AcqRel) {
+        return;
+    }
     set_local(s, |x| x.paired_loading = true);
     let data = s.data.clone();
     bg::spawn(move || {
+        struct Done;
+        impl Drop for Done {
+            fn drop(&mut self) {
+                RUNNING.store(false, std::sync::atomic::Ordering::Release);
+            }
+        }
+        let _done = Done;
         std::thread::sleep(std::time::Duration::from_millis(delay_ms));
         let p = radios::paired();
         let mut x = data.lock().unwrap();
@@ -369,7 +396,11 @@ fn slider(ui: &mut Ui, sid: u64, track: Rect, wheel_area: Rect, value: f32) -> O
     }
     if ui.st.active == sid {
         if ui.input.down {
-            out = Some(((ui.mouse().0 - track.x - 6.0) / span).clamp(0.0, 1.0));
+            // Only a real change counts (holding still sets nothing).
+            let nv = ((ui.mouse().0 - track.x - 6.0) / span).clamp(0.0, 1.0);
+            if (nv - v).abs() >= 0.005 {
+                out = Some(nv);
+            }
             ui.animate = true;
         } else {
             ui.st.active = 0;
@@ -444,7 +475,7 @@ fn brightness_card(ui: &mut Ui, s: &mut State, d: &Data, r: Rect) {
                 if level != disp.level {
                     let did = disp.id.clone();
                     data.lock().unwrap().displays[i].level = level;
-                    bg::spawn(move || brightness::set(&did, level));
+                    bg::latest(id("ctl.bright") ^ i as u64, move || brightness::set(&did, level));
                 }
             }
             let shown = data.lock().unwrap().displays.get(i).map_or(disp.level, |x| x.level);
@@ -510,7 +541,7 @@ fn sound_card(ui: &mut Ui, s: &mut State, d: &Data, r: Rect) {
             let track = Rect::new(row.x + 2.0, row.y, row.w - 2.0 - 6.0 - 30.0 - 28.0, row.h);
             if let Some(nv) = slider(ui, id(if input { "ctl.inlv" } else { "ctl.outlv" }), track, row, lv) {
                 set_local(s, |x| if input { x.in_level = Some((nv, m)) } else { x.out_level = Some((nv, m)) });
-                bg::spawn(move || audio::set_master(input, nv));
+                bg::latest(id("ctl.level") ^ input as u64, move || audio::set_master(input, nv));
             }
             let shown = {
                 let x = s.data.lock().unwrap();
@@ -568,7 +599,7 @@ fn sound_card(ui: &mut Ui, s: &mut State, d: &Data, r: Rect) {
                         x.muted = false;
                     }
                 }
-                bg::spawn(move || audio::set_session_volume(pid, nv));
+                bg::latest(id("ctl.session") ^ pid as u64, move || audio::set_session_volume(pid, nv));
             }
             let (vol, muted) = data.lock().unwrap().sessions.get(i).map_or((ses.volume, ses.muted), |x| (x.volume, x.muted));
             ui.text(&((vol * 100.0).round() as i32).to_string(), Rect::new(row.right() - 28.0 - 30.0, row.y, 30.0, row.h), 11.0, SEMIBOLD, t.subtext, Align::Right);
@@ -684,17 +715,54 @@ fn detail(ui: &mut Ui, s: &mut State, d: &Data, r: Rect, det: Detail) {
                 return;
             }
             let devs = d.paired.clone();
+            let busy = d.bt_busy.clone();
+            let mut clicked = None;
             ui.scroll(id("ctl.bt"), list, 36.0 * devs.len() as f32, |ui, top| {
                 for (i, b) in devs.iter().enumerate() {
                     let row = Rect::new(list.x, top + i as f32 * 36.0, list.w - 6.0, 34.0);
-                    // Windows doesn't let apps connect a paired device: its Settings page does it in one click.
-                    if choice(ui, row, "Bluetooth", 1.0, &b.name, if b.connected { "Connected" } else { "Not connected" }, b.connected, true, 0.0) {
-                        crate::shell::open_settings_page("ms-settings:bluetooth");
+                    let status = match &busy {
+                        Some((n, true)) if *n == b.name => "Connecting…",
+                        Some((n, false)) if *n == b.name => "Disconnecting…",
+                        _ if b.connected => "Connected · click to disconnect",
+                        _ => "Not connected · click to connect",
+                    };
+                    if choice(ui, row, "Bluetooth", 1.0, &b.name, status, b.connected, true, 0.0) && busy.is_none() {
+                        clicked = Some((b.name.clone(), !b.connected));
                     }
                 }
             });
+            if let Some((name, connect)) = clicked {
+                bt_toggle(s, name, connect);
+            }
         }
     }
+}
+
+/// Connects or disconnects a paired Bluetooth device in place. Audio devices (headphones, earbuds,
+/// speakers) switch right away; anything else (a mouse, a phone) can't be connected by an app, so its
+/// Settings page opens for that one click.
+fn bt_toggle(s: &State, name: String, connect: bool) {
+    set_local(s, |x| x.bt_busy = Some((name.clone(), connect)));
+    let data = s.data.clone();
+    bg::spawn(move || {
+        let ok = audio::bt_connect(&name, connect);
+        if !ok {
+            crate::shell::open_settings_page("ms-settings:bluetooth");
+        }
+        // Give the link a few seconds to come up (or go down), then read the list again.
+        for _ in 0..8 {
+            std::thread::sleep(std::time::Duration::from_millis(750));
+            let p = radios::paired();
+            let settled = p.iter().find(|b| b.name == name).map_or(true, |b| b.connected == connect);
+            data.lock().unwrap().paired = p;
+            crate::bg::refresh();
+            if settled || !ok {
+                break;
+            }
+        }
+        data.lock().unwrap().bt_busy = None;
+        crate::bg::refresh();
+    });
 }
 
 fn wifi_list(ui: &mut Ui, s: &mut State, d: &Data, list: Rect) {

@@ -1164,7 +1164,8 @@ impl Notch {
         } else {
             ui.text(tool.title, Rect::new(head.x, head.y, 260.0, head.h), 17.0, SEMIBOLD, t.text, Align::Left);
         }
-        if s_.header_clock {
+        // Home shows its own date and clock, so the header one stays off there.
+        if s_.header_clock && self.tool != "home" {
             let date = format!("{} {} {} {}", &DAYS[now.dow][..3], now.day, &MONTHS[now.month - 1][..3], now.year);
             let time = format!("{:02}:{:02}", now.hour, now.minute);
             let dw = ui.measure(&date, 14.0, REGULAR);
