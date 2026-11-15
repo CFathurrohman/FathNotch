@@ -11,6 +11,11 @@
 </p>
 
 <p align="center">
+  <a href="https://cfathurrohman.github.io/FathNotch/"><b>Website</b></a> ·
+  <a href="../../releases/latest"><b>Download</b></a>
+</p>
+
+<p align="center">
   <img alt="Windows 10/11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6">
   <img alt="Rust" src="https://img.shields.io/badge/Rust-stable-orange">
   <img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-green">
