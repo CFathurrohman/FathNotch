@@ -33,6 +33,8 @@ struct Model {
     lyrics_loading: bool,
     alerts: Vec<Alert>,
     prayer_alerted: String,
+    /// The prayer (name + time) the heads-up before it was shown for.
+    prayer_lead_alerted: String,
     activity: Option<Activity>,
 }
 
@@ -194,6 +196,19 @@ fn minute_tick() {
             });
         }
     }
+    // Heads-up a few minutes before (Settings → Prayer → Heads-up), once per prayer, without the sound.
+    if let Some((name, at, mins)) = prayer_soon() {
+        let key = format!("{name}{at}");
+        let due = model().prayer_lead_alerted != key;
+        if due {
+            model().prayer_lead_alerted = key;
+            push_alert(Alert {
+                key: "prayer".into(),
+                kind: AlertKind::Full { icon: "Moon", title: format!("{name} in {mins} min"), sub: format!("{at} · {}", prayer_city()), open: Some("prayer"), app: None },
+                duration: Duration::from_secs(6),
+            });
+        }
+    }
 }
 
 /// An alarm going off: a pop-up (also kept in Notifications) that stays while it rings; clicking it opens
@@ -287,9 +302,30 @@ fn prayer_now() -> Option<(&'static str, String)> {
     None
 }
 
+/// The prayer coming within the heads-up lead (name, time, whole minutes left), if the heads-up is on.
+fn prayer_soon() -> Option<(&'static str, String, i64)> {
+    let lead = settings::shared().prayer_lead_min;
+    if lead <= 0 {
+        return None;
+    }
+    let t = prayer_times()?;
+    let now = now_hours();
+    for (i, at) in times_list(&t).iter().enumerate() {
+        let left = at - now;
+        if i != 1 && left > 1.0 / 60.0 && left <= lead as f64 / 60.0 {
+            return Some((prayer::NAMES[i], prayer::hhmm(*at), (left * 60.0).ceil() as i64));
+        }
+    }
+    None
+}
+
 // ---------------------------------------------------------------------- music
 
 pub fn now_playing() -> Option<media::NowPlaying> {
+    // Dev aid for screenshots: FATHNOTCH_NO_MEDIA hides whatever is playing on this PC.
+    if std::env::var_os("FATHNOTCH_NO_MEDIA").is_some() {
+        return None;
+    }
     media::current().filter(|n| !n.title.is_empty())
 }
 

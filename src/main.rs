@@ -402,6 +402,8 @@ fn prepare(n: &mut Notch) {
     }
     if model::activity_changed() {
         n.activity_changed();
+    } else {
+        n.refit_idle();
     }
 }
 
@@ -1046,6 +1048,13 @@ fn main() -> Result<()> {
         if let Ok(demo) = std::env::var("FATHNOTCH_DEMO") {
             if demo == "alert" {
                 caps_alert(true);
+            } else if demo == "prayeralert" {
+                // a sample prayer heads-up (screenshots)
+                model::push_alert(notch::Alert {
+                    key: "prayer".into(),
+                    kind: notch::AlertKind::Full { icon: "Moon", title: "Ashar in 10 min".into(), sub: format!("15:02 · {}", model::prayer_city()), open: Some("prayer"), app: None },
+                    duration: Duration::from_secs(60),
+                });
             } else if demo == "closed" {
                 // stays closed (screenshots of the pill)
             } else if demo == "eyes" {

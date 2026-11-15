@@ -593,6 +593,19 @@ impl Notch {
         (MUSIC_LEFT + tw + MUSIC_RIGHT).ceil().clamp(min, MUSIC_MAX_W)
     }
 
+    /// Idle items changed length (the weather arrived, the next prayer moved on): fit the closed notch
+    /// again so nothing is cut off.
+    pub fn refit_idle(&mut self) {
+        if self.expanded || self.alert.is_some() || model::activity() != model::Activity::Idle {
+            return;
+        }
+        let before = self.width.target;
+        self.resize_closed();
+        if (self.width.target - before).abs() > 0.5 {
+            self.busy = true;
+        }
+    }
+
     /// The closed notch's content changed (music started, a timer ran out…).
     pub fn activity_changed(&mut self) {
         if !self.expanded && self.alert.is_none() {
