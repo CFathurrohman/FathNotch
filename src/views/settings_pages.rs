@@ -342,8 +342,12 @@ pub fn display(p: &mut Pg) {
         &[
             R::c("Notch size", "Width and height of the closed notch. Tiny and Extra Small keep it narrow; larger is easier to hit on big monitors.", 140.0),
             R::c("Panel size", "How big the open panel is drawn: header, tools and tab bar together.", 160.0),
+            R::c("Notch max width", "How wide the closed notch may grow for a long lyric line or several items. Longer lines end in \"…\".", 160.0),
+            R::c("Island width", "Width of the pop-up for notifications, reminders and prayer times.", 160.0),
         ],
     );
+    p.pick(rr[2], "set.notchmax", &["Narrow", "Medium", "Wide", "Extra wide"], &[360, 440, 520, 640], &s.notch_max_w, 1, |x, v| x.notch_max_w = v);
+    p.pick(rr[3], "set.islandw", &["Compact", "Medium", "Wide"], &[340, 380, 420], &s.island_w, 1, |x, v| x.island_w = v);
     let sizes: Vec<String> = ["Tiny", "ExtraSmall", "Small", "Default", "Large", "ExtraLarge"].iter().map(|x| x.to_string()).collect();
     p.pick(rr[0], "set.size", &["Tiny", "Extra Small", "Small", "Default", "Large", "Extra Large"], &sizes, &s.notch_size, 0, |x, v| x.notch_size = v);
     if let Some(r) = rr[1] {

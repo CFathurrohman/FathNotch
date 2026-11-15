@@ -1,4 +1,4 @@
-﻿//! The notch: its state, springs, closed-state activities, alerts and the open panel (header, tool, tab bar).
+﻿//! The notch:                     let widest = model::idle_items().iter().map(|i| self.idle_item_w(i, fs)).fold(0.0f32, f32::max);ts state, springs, closed-state activities, alerts and the open panel (header, tool, tab bar).
 
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
@@ -28,7 +28,10 @@ const TOOL_ANIM_SECS: f32 = 0.28;
 const GAP: f32 = 8.0;
 const MINI_H: f32 = 40.0;
 const PEEK_H: f32 = 76.0;
-const PEEK_W: f32 = 420.0;
+/// Settings → Display → Island width (the pop-up for notifications, reminders, prayer times).
+fn peek_w() -> f32 {
+    settings::shared().island_w.clamp(320, 480) as f32
+}
 const LEVEL_W: f32 = 216.0;
 const LEVEL_BAR: f32 = 150.0;
 const HEADER_H: f32 = 56.0;
@@ -378,8 +381,10 @@ pub fn now() -> Now {
 /// Music in the closed notch: art (12 + 22 + 10) on the left, equalizer (14 gap + bars + 16) on the right.
 const MUSIC_LEFT: f32 = 44.0;
 const MUSIC_RIGHT: f32 = 48.0;
-/// Widest the closed notch grows for a long lyric line.
-const MUSIC_MAX_W: f32 = 640.0;
+/// Widest the closed notch grows for a long lyric line or several idle items (Settings → Display).
+fn notch_max_w() -> f32 {
+    settings::shared().notch_max_w.clamp(300, 640) as f32
+}
 
 /// The line the closed notch shows while music plays: the current lyric line, else the title.
 fn music_text() -> String {
@@ -394,6 +399,7 @@ fn music_text() -> String {
 /// Closed size from Settings → Display "Notch size".
 fn idle_size() -> (f32, f32) {
     match settings::shared().notch_size.as_str() {
+        "Tiny" => (108.0, 26.0),
         "ExtraSmall" => (128.0, 29.0),
         "Small" => (156.0, 32.0),
         "Large" => (236.0, 42.0),
@@ -556,9 +562,17 @@ impl Notch {
                     let items = model::idle_items();
                     let total: f32 = items.iter().map(|i| 20.0 + self.gfx.measure(&i.value, fs, SEMIBOLD)).sum::<f32>()
                         + 18.0 * (items.len() as f32 - 1.0).max(0.0);
-                    (total + 40.0).clamp(w, 640.0)
+                    (total + 40.0).min(notch_max_w()).max(w)
                 }
-                "Split" => w + if w < 170.0 { 120.0 } else { 150.0 },
+                // First item on the left, the widest of the others on the right (they rotate there); with one
+                // item it is drawn like Rotate, so it is sized like it too.
+                "Split" if model::idle_items().len() > 1 => {
+                    let fs = idle_font(h);
+                    let items = model::idle_items();
+                    let first = self.idle_item_w(&items[0], fs);
+                    let rest = items[1..].iter().map(|i| self.idle_item_w(i, fs)).fold(0.0f32, f32::max);
+                    (36.0 + first + 20.0 + 22.0 + rest + 16.0).ceil().min(notch_max_w()).max(w)
+                }
                 // One width for the whole rotation, sized for the widest item, so the notch doesn't grow and
                 // shrink as items change: glyph + gap + value + side margins (as the C# app).
                 _ => {
@@ -577,7 +591,7 @@ impl Notch {
                             self.gfx.measure(&i.value, fs, SEMIBOLD).max(self.gfx.measure(template, fs, SEMIBOLD))
                         })
                         .fold(0.0f32, f32::max);
-                    (fs + 2.0 + 16.0 + widest + 25.0).ceil().clamp(w, 640.0)
+                    (fs + 2.0 + 16.0 + widest + 25.0).ceil().min(notch_max_w()).max(w)
                 }
             },
         };
@@ -585,12 +599,26 @@ impl Notch {
         self.height.target = h;
     }
 
+    /// Width of an idle item's value, never less than its widest usual value (so the notch doesn't grow
+    /// and shrink as the clock or the next prayer changes).
+    fn idle_item_w(&self, i: &model::IdleItem, fs: f32) -> f32 {
+        let template = match i.id {
+            "clock" => "00:00",
+            "weather" => "-00°",
+            "prayer" => "Maghrib 00:00",
+            "todos" => "00 open",
+            "battery" => "100%",
+            _ => "",
+        };
+        self.gfx.measure(&i.value, fs, SEMIBOLD).max(self.gfx.measure(template, fs, SEMIBOLD))
+    }
+
     /// Closed width while music plays: art + the whole line (lyric or title) + equalizer, never less than
     /// the old fixed music width, so the line is shown in full and the notch follows its length.
     fn music_width(&self, text: &str, idle_w: f32, fs: f32) -> f32 {
         let min = idle_w + if idle_w < 170.0 { 120.0 } else { 150.0 };
         let tw = self.gfx.measure(text, fs, SEMIBOLD);
-        (MUSIC_LEFT + tw + MUSIC_RIGHT).ceil().clamp(min, MUSIC_MAX_W)
+        (MUSIC_LEFT + tw + MUSIC_RIGHT).ceil().min(notch_max_w()).max(min.min(notch_max_w()))
     }
 
     /// Idle items changed length (the weather arrived, the next prayer moved on): fit the closed notch
@@ -660,9 +688,9 @@ impl Notch {
             AlertKind::Compact { title, sub, .. } => {
                 let tw = self.gfx.measure(title, 13.0, SEMIBOLD);
                 let sw = if sub.is_empty() { 0.0 } else { 8.0 + self.gfx.measure(sub, 12.0, REGULAR) };
-                ((tw + sw + 66.0).ceil().clamp(idle_size().0.max(180.0), 380.0), MINI_H)
+                ((tw + sw + 66.0).ceil().min(peek_w()).max(idle_size().0.max(180.0)), MINI_H)
             }
-            AlertKind::Full { .. } => (PEEK_W, PEEK_H),
+            AlertKind::Full { .. } => (peek_w(), PEEK_H),
         };
         self.width.target = w;
         self.height.target = h;
@@ -964,7 +992,7 @@ impl Notch {
                     // while the notch is still growing; only a line longer than the widest notch is trimmed.
                     let lay = |s: &str| {
                         let full = g.measure(s, fs, SEMIBOLD);
-                        let w = if full <= MUSIC_MAX_W - MUSIC_LEFT - MUSIC_RIGHT { full + 4.0 } else { text_r.w };
+                        let w = if full <= notch_max_w() - MUSIC_LEFT - MUSIC_RIGHT { full + 4.0 } else { text_r.w };
                         (Rect::new(text_r.x, text_r.y, w, text_r.h), full)
                     };
                     g.push_clip(text_r.d2d());
@@ -1032,8 +1060,12 @@ impl Notch {
                 match layout.as_str() {
                     // Every item side by side.
                     "Row" => {
-                        let widths: Vec<f32> = items.iter().map(|i| 20.0 + g.measure(&i.value, fs, SEMIBOLD)).collect();
-                        let total: f32 = widths.iter().sum::<f32>() + 18.0 * (items.len() as f32 - 1.0);
+                        let mut widths: Vec<f32> = items.iter().map(|i| 20.0 + g.measure(&i.value, fs, SEMIBOLD)).collect();
+                        // Only the items that fit the notch's width limit (Settings → Display), first ones first.
+                        while widths.len() > 1 && widths.iter().sum::<f32>() + 18.0 * (widths.len() as f32 - 1.0) > r.w - 36.0 {
+                            widths.pop();
+                        }
+                        let total: f32 = widths.iter().sum::<f32>() + 18.0 * (widths.len() as f32 - 1.0);
                         let mut x = r.cx() - total / 2.0;
                         for (i, (it, w)) in items.iter().zip(&widths).enumerate() {
                             if i > 0 {

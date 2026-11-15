@@ -116,6 +116,10 @@ pub struct Settings {
 
     /// Tiny, ExtraSmall, Small, Default, Large, ExtraLarge.
     pub notch_size: String,
+    /// Widest the closed notch grows (a long lyric line, several idle items), in DIP.
+    pub notch_max_w: i32,
+    /// Width of the pop-up island for notifications, reminders and prayer alerts, in DIP.
+    pub island_w: i32,
     /// "Icons" | "Dots"
     pub tab_style: String,
     pub look_version: i32,
@@ -247,6 +251,8 @@ impl Default for Settings {
             glass: false,
             glass_strength: 0.6,
             notch_size: s("ExtraSmall"),
+            notch_max_w: 440,
+            island_w: 380,
             tab_style: s("Icons"),
             look_version: 0,
             header_clock: true,
