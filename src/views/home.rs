@@ -320,6 +320,23 @@ fn now_playing_card(ui: &mut Ui, s: &mut State, r: Rect, go: &mut Option<&'stati
     };
     ui.text(label, Rect::new(x, inner.y, w - 28.0, 12.0), 10.0, BOLD, t.accent, Align::Left);
     let open = Rect::new(inner.right() + 6.0 - 26.0, inner.y - 4.0, 26.0, 26.0);
+    // Several players open: a picker of which one to show, beside the label (as in Now Playing).
+    let (sources, pinned) = media::sources();
+    if sources.len() > 1 {
+        let left = x + ui.measure(label, 10.0, BOLD) + 10.0;
+        let pr = Rect::new(left, inner.y - 5.0, (open.x - 4.0 - left).clamp(60.0, 170.0), 19.0);
+        let shown = sources.iter().position(|s| s.shown);
+        // Short here: the app already shows under the title.
+        let mut options = vec!["Auto".to_string()];
+        options.extend(sources.iter().map(|s| {
+            let mark = if s.playing { "▶ " } else { "" };
+            if s.title.trim().is_empty() { format!("{mark}{}", s.app) } else { format!("{mark}{} · {}", s.app, s.title.trim()) }
+        }));
+        let selected = if pinned { shown.map_or(0, |i| i + 1) } else { 0 };
+        if let Some(i) = ui.dropdown(crate::ui::id("home.source"), pr, &options, selected) {
+            media::choose(if i == 0 { None } else { sources.get(i - 1).cloned() });
+        }
+    }
     if ui.icon_button(open, "ChevronRight", 13.0, t.subtext) {
         *go = Some("nowplaying");
     }

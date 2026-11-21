@@ -383,7 +383,9 @@ const MUSIC_LEFT: f32 = 44.0;
 const MUSIC_RIGHT: f32 = 48.0;
 /// Widest the closed notch grows for a long lyric line or several idle items (Settings → Display).
 fn notch_max_w() -> f32 {
-    settings::shared().notch_max_w.clamp(300, 640) as f32
+    // A smaller Notch size keeps the grown notch smaller too (Tiny: 60 % of the limit, Default and up: all).
+    let scale = (idle_size().0 / 196.0).clamp(0.6, 1.0);
+    (settings::shared().notch_max_w.clamp(300, 640) as f32 * scale).round()
 }
 
 /// The line the closed notch shows while music plays: the current lyric line, else the title.
@@ -613,10 +615,10 @@ impl Notch {
         self.gfx.measure(&i.value, fs, SEMIBOLD).max(self.gfx.measure(template, fs, SEMIBOLD))
     }
 
-    /// Closed width while music plays: art + the whole line (lyric or title) + equalizer, never less than
-    /// the old fixed music width, so the line is shown in full and the notch follows its length.
+    /// Closed width while music plays: art + the whole line (lyric or title) + equalizer, a little wider
+    /// than the idle notch at least, at most Notch max width (a longer line slides along).
     fn music_width(&self, text: &str, idle_w: f32, fs: f32) -> f32 {
-        let min = idle_w + if idle_w < 170.0 { 120.0 } else { 150.0 };
+        let min = idle_w + 40.0;
         let tw = self.gfx.measure(text, fs, SEMIBOLD);
         (MUSIC_LEFT + tw + MUSIC_RIGHT).ceil().min(notch_max_w()).max(min.min(notch_max_w()))
     }
@@ -988,27 +990,48 @@ impl Notch {
                         }
                     }
                     let g = &self.gfx;
-                    // Laid out at its full width and only clipped by the notch, so it never turns into "…"
-                    // while the notch is still growing; only a line longer than the widest notch is trimmed.
-                    let lay = |s: &str| {
+                    // Always laid out at full width and clipped by the notch, never cut to "…": a line longer
+                    // than the notch (Settings → Display → Notch max width) slides along instead.
+                    let lay = |s: &str, shift: f32| {
                         let full = g.measure(s, fs, SEMIBOLD);
-                        let w = if full <= notch_max_w() - MUSIC_LEFT - MUSIC_RIGHT { full + 4.0 } else { text_r.w };
-                        (Rect::new(text_r.x, text_r.y, w, text_r.h), full)
+                        (Rect::new(text_r.x - shift, text_r.y, full + 4.0, text_r.h), full)
                     };
+                    let over = |s: &str| (g.measure(s, fs, SEMIBOLD) - text_r.w).max(0.0);
                     g.push_clip(text_r.d2d());
                     match model::lyric_line() {
                         Some((line, prog)) if settings::shared().lyrics_in_notch => {
-                            // Karaoke: the sung part bright, the rest dim.
-                            let (lr, full) = lay(&line);
+                            // Karaoke: the sung part bright, the rest dim; a long line slides so the part
+                            // being sung stays in view.
+                            let k = ((prog - 0.15) / 0.7).clamp(0.0, 1.0);
+                            let shift = over(&line) * (k * k * (3.0 - 2.0 * k));
+                            let (lr, full) = lay(&line, shift);
                             g.text(&line, fs, SEMIBOLD, lr.d2d(), Align::Left, with_alpha(t.subtext, a));
-                            let w = full.min(lr.w);
-                            g.push_clip(Rect::new(text_r.x, text_r.y, w * prog, text_r.h).d2d());
+                            g.push_clip(Rect::new(lr.x, text_r.y, full * prog, text_r.h).d2d());
                             g.text(&line, fs, SEMIBOLD, lr.d2d(), Align::Left, with_alpha(t.text, a));
                             g.pop_clip();
                             self.busy = true;
                         }
                         _ => {
-                            let (lr, _) = lay(&np.title);
+                            // A long title glides to its end and back, pausing at each end.
+                            let o = over(&np.title);
+                            let shift = if o > 0.0 {
+                                self.busy = true;
+                                let travel = o / 30.0; // 30 DIP a second
+                                let cycle = 2.0 * (travel + 2.0);
+                                let p = (model::clock_secs() as f32) % cycle;
+                                if p < 2.0 {
+                                    0.0
+                                } else if p < 2.0 + travel {
+                                    o * (p - 2.0) / travel
+                                } else if p < 4.0 + travel {
+                                    o
+                                } else {
+                                    o * (1.0 - (p - 4.0 - travel) / travel)
+                                }
+                            } else {
+                                0.0
+                            };
+                            let (lr, _) = lay(&np.title, shift);
                             g.text(&np.title, fs, SEMIBOLD, lr.d2d(), Align::Left, with_alpha(t.text, a));
                         }
                     }

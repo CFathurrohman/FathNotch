@@ -78,11 +78,44 @@ struct State {
     now: Option<NowPlaying>,
     /// The last seek (wall-clock ticks, and when): timeline reports older than it are stale.
     seek: Option<(i64, Instant, f64)>,
+    /// Every player Windows knows about, as of the last look (for the source picker).
+    sources: Vec<Source>,
+    /// The player the user picked (session pointer, app id); None follows the best one.
+    pinned: Option<(usize, String)>,
+}
+
+/// A player that can be shown.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Source {
+    pub app: String,
+    pub title: String,
+    pub playing: bool,
+    /// Whether it's the one being shown.
+    pub shown: bool,
+    raw: usize,
+    aumid: String,
 }
 
 fn state() -> &'static Mutex<State> {
     static S: OnceLock<Mutex<State>> = OnceLock::new();
-    S.get_or_init(|| Mutex::new(State { manager: None, hooked: None, now: None, seek: None }))
+    S.get_or_init(|| Mutex::new(State { manager: None, hooked: None, now: None, seek: None, sources: Vec::new(), pinned: None }))
+}
+
+/// The players to choose from (refreshed every couple of seconds), and whether one was picked by hand.
+pub fn sources() -> (Vec<Source>, bool) {
+    let s = lock();
+    (s.sources.clone(), s.pinned.is_some())
+}
+
+/// Show this player (an entry from `sources`), or None to follow the best one again.
+pub fn choose(source: Option<Source>) {
+    lock().pinned = source.map(|s| (s.raw, s.aumid));
+    crate::bg::spawn(|| {
+        let m = lock().manager.clone();
+        if let Some(m) = m {
+            reselect(&m);
+        }
+    });
 }
 
 fn lock() -> std::sync::MutexGuard<'static, State> {
@@ -126,8 +159,31 @@ fn reselect(m: &Manager) {
     if sessions.is_empty() {
         sessions.extend(windows_pick.clone());
     }
-    let hooked = lock().hooked.as_ref().map(|h| h.session.as_raw());
-    let best = sessions
+    let (hooked, pinned) = {
+        let s = lock();
+        (s.hooked.as_ref().map(|h| h.session.as_raw()), s.pinned.clone())
+    };
+    let aumid = |s: &Session| s.SourceAppUserModelId().map(|a| a.to_string_lossy()).unwrap_or_default();
+    // The player picked by hand wins while it's around: the same session, else the only one of that app.
+    let picked = pinned.as_ref().and_then(|(raw, id)| {
+        sessions.iter().find(|s| s.as_raw() as usize == *raw).cloned().or_else(|| {
+            let same_app: Vec<&Session> = sessions.iter().filter(|s| aumid(s) == *id).collect();
+            (same_app.len() == 1).then(|| same_app[0].clone())
+        })
+    });
+    // Update the pin, unless the user changed it while we looked (choose() starts its own look then).
+    {
+        let mut st = lock();
+        if st.pinned != pinned {
+            return;
+        }
+        match (&picked, &pinned) {
+            (Some(p), Some((_, id))) => st.pinned = Some((p.as_raw() as usize, id.clone())),
+            (None, Some(_)) => st.pinned = None, // it closed: back to automatic
+            _ => {}
+        }
+    }
+    let scored: Vec<(i32, i32, Session)> = sessions
         .into_iter()
         .map(|s| {
             let raw = s.as_raw();
@@ -135,8 +191,30 @@ fn reselect(m: &Manager) {
             let tie = if Some(raw) == hooked { 2 } else if windows_pick.as_ref().is_some_and(|w| w.as_raw() == raw) { 1 } else { 0 };
             (score(&s), tie, s)
         })
-        .max_by_key(|(sc, tie, _)| (*sc, *tie))
-        .map(|(_, _, s)| s);
+        .collect();
+    let best = picked.or_else(|| scored.iter().max_by_key(|(sc, tie, _)| (*sc, *tie)).map(|(_, _, s)| s.clone()));
+    // The list for the picker.
+    let list: Vec<Source> = scored
+        .iter()
+        .map(|(sc, _, s)| {
+            let id = aumid(s);
+            let title = s.TryGetMediaPropertiesAsync().and_then(|op| op.get()).and_then(|p| p.Title()).map(|t| t.to_string_lossy()).unwrap_or_default();
+            Source {
+                app: pretty_app(&id),
+                title,
+                playing: *sc >= 100,
+                shown: best.as_ref().is_some_and(|b| b.as_raw() == s.as_raw()),
+                raw: s.as_raw() as usize,
+                aumid: id,
+            }
+        })
+        .collect();
+    let changed = {
+        let mut st = lock();
+        let c = st.sources != list;
+        st.sources = list;
+        c
+    };
     let same = match (&best, hooked) {
         (Some(b), Some(h)) => b.as_raw() == h,
         (None, None) => true,
@@ -144,6 +222,8 @@ fn reselect(m: &Manager) {
     };
     if !same {
         hook(best);
+    } else if changed {
+        crate::bg::refresh();
     }
 }
 
@@ -415,20 +495,37 @@ pub fn play_pause() {
         };
         specific || s.TryTogglePlayPauseAsync().and_then(|op| op.get()).unwrap_or(false)
     });
-    if !ok {
+    // As in skip(): the media key only when it would reach the player shown (or nothing is followed).
+    let shown = session();
+    let windows_pick = lock().manager.as_ref().and_then(|m| m.GetCurrentSession().ok());
+    if !ok && shown.as_ref().map_or(true, |s| windows_pick.is_some_and(|w| w.as_raw() == s.as_raw())) {
         media_key(VK_MEDIA_PLAY_PAUSE);
     }
 }
 
 pub fn next() {
-    if !session().is_some_and(|s| s.TrySkipNextAsync().and_then(|op| op.get()).unwrap_or(false)) {
-        media_key(VK_MEDIA_NEXT_TRACK);
-    }
+    skip(true);
 }
 
 pub fn previous() {
-    if !session().is_some_and(|s| s.TrySkipPreviousAsync().and_then(|op| op.get()).unwrap_or(false)) {
-        media_key(VK_MEDIA_PREV_TRACK);
+    skip(false);
+}
+
+/// Next or previous track on the player shown. If it says no, the keyboard's media key is the fallback,
+/// but Windows hands that key to its own pick, so it's only pressed when that is the player shown;
+/// otherwise the key would skip a track in another player (a YouTube tab instead of Metrolist).
+fn skip(forward: bool) {
+    let Some(s) = session() else {
+        media_key(if forward { VK_MEDIA_NEXT_TRACK } else { VK_MEDIA_PREV_TRACK });
+        return;
+    };
+    let ok = if forward { s.TrySkipNextAsync() } else { s.TrySkipPreviousAsync() }.and_then(|op| op.get()).unwrap_or(false);
+    if ok {
+        return;
+    }
+    let windows_pick = lock().manager.as_ref().and_then(|m| m.GetCurrentSession().ok());
+    if windows_pick.is_some_and(|w| w.as_raw() == s.as_raw()) {
+        media_key(if forward { VK_MEDIA_NEXT_TRACK } else { VK_MEDIA_PREV_TRACK });
     }
 }
 
@@ -536,6 +633,19 @@ mod tests {
         start();
         std::thread::sleep(std::time::Duration::from_millis(1500));
         println!("following: {:?}", current().map(|n| n.app));
+        let (list, pinned) = sources();
+        for s in &list {
+            println!("source: {:<20} playing={} shown={}", s.app, s.playing, s.shown);
+        }
+        // Pick a player that isn't shown, check it is followed, then go back to automatic.
+        if let Some(other) = list.iter().find(|s| !s.shown).cloned() {
+            choose(Some(other.clone()));
+            std::thread::sleep(std::time::Duration::from_millis(1500));
+            println!("picked {} -> following {:?} (pinned before: {pinned})", other.app, current().map(|n| n.app));
+            choose(None);
+            std::thread::sleep(std::time::Duration::from_millis(1500));
+            println!("auto -> following {:?}", current().map(|n| n.app));
+        }
     }
 
     #[test]

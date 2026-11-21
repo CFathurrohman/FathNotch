@@ -360,7 +360,7 @@ pub fn display(p: &mut Pg) {
         &[
             R::c("Notch size", "Width and height of the closed notch. Tiny and Extra Small keep it narrow; larger is easier to hit on big monitors.", 140.0),
             R::c("Panel size", "How big the open panel is drawn: header, tools and tab bar together.", 160.0),
-            R::c("Notch max width", "How wide the closed notch may grow for a long lyric line or several items. Longer lines end in \"…\".", 160.0),
+            R::c("Notch max width", "How wide the closed notch may grow for a long lyric line or several items; a smaller Notch size shrinks it too. Longer lines slide along.", 160.0),
             R::c("Island width", "Width of the pop-up for notifications, reminders and prayer times.", 160.0),
         ],
     );

@@ -122,16 +122,35 @@ pub fn draw(ui: &mut Ui, s: &mut State, r: Rect, _go: &mut Option<&'static str>)
         Some(p) => (p.app.as_str(), p.title.as_str(), p.artist.as_str()),
         None => ("", "Nothing playing", ""),
     };
-    // A centred stack: caps (14), title, artist (17), status (4 + 15).
+    // Several players open: the app line becomes a picker of which one to show.
+    let (sources, pinned) = media::sources();
+    let picker = sources.len() > 1;
+    // A centred stack: caps (14, or the picker's 24), title, artist (17), status (4 + 15).
     let title_h = title_size * 1.33;
-    let mut heights = vec![14.0, 2.0 + title_h, 17.0];
+    let mut heights = vec![if picker { 24.0 } else { 14.0 }, 2.0 + title_h, 17.0];
     if !status.is_empty() {
         heights.push(19.0);
     }
     let total: f32 = heights.iter().sum();
     let mut y = top.cy() - total / 2.0;
-    ui.text(app, Rect::new(tx, y, tw, 14.0), 11.0, BOLD, t.subtext, Align::Left);
-    y += 14.0 + 2.0;
+    if picker {
+        let shown = sources.iter().position(|s| s.shown);
+        let label = |s: &media::Source| {
+            let mark = if s.playing { "▶ " } else { "" };
+            if s.title.trim().is_empty() { format!("{mark}{}", s.app) } else { format!("{mark}{} · {}", s.app, s.title.trim()) }
+        };
+        let mut options = vec![format!("Auto · {}", shown.map_or(app.to_string(), |i| sources[i].app.clone()))];
+        options.extend(sources.iter().map(label));
+        let selected = if pinned { shown.map_or(0, |i| i + 1) } else { 0 };
+        let r = Rect::new(tx, y, tw.min(220.0), 24.0);
+        if let Some(i) = ui.dropdown(crate::ui::id("np.source"), r, &options, selected) {
+            media::choose(if i == 0 { None } else { sources.get(i - 1).cloned() });
+        }
+        y += 24.0 + 2.0;
+    } else {
+        ui.text(app, Rect::new(tx, y, tw, 14.0), 11.0, BOLD, t.subtext, Align::Left);
+        y += 14.0 + 2.0;
+    }
     ui.text(title, Rect::new(tx, y, tw, title_h), title_size, SEMIBOLD, t.text, Align::Left);
     y += title_h;
     ui.text(artist, Rect::new(tx, y, tw, 17.0), 12.0, REGULAR, t.subtext, Align::Left);
