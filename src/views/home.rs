@@ -80,10 +80,10 @@ fn refresh_lists(s: &mut State) {
     s.lists = Some((Instant::now(), rows));
 }
 
-/// Cards fade in and rise 8 px over 320 ms, each `delay` later (C# Rise).
+/// Cards fade in and rise 8 px over 200 ms, each `delay` later (quicker than the C# Rise).
 fn rise(ui: &mut Ui, s: &State, delay: f64) -> (f32, f32) {
     let since = crate::services::settings::anim_secs((model::clock_secs() - s.shown_at) as f32) as f64;
-    let k = ((since - delay) / 0.32).clamp(0.0, 1.0) as f32;
+    let k = ((since - delay) / 0.2).clamp(0.0, 1.0) as f32;
     if k < 1.0 {
         ui.animate = true;
     }
@@ -106,7 +106,7 @@ pub fn draw(ui: &mut Ui, s: &mut State, r: Rect, go: &mut Option<&'static str>) 
     let (a, dy) = rise(ui, s, 0.0);
     ui.alpha = base_alpha * a;
     now_playing_card(ui, s, shifted(left, dy), go);
-    let (a, dy) = rise(ui, s, 0.06);
+    let (a, dy) = rise(ui, s, 0.03);
     ui.alpha = base_alpha * a;
     today_card(ui, s, shifted(right, dy), go);
     ui.alpha = base_alpha;

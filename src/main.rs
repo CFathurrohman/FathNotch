@@ -659,6 +659,11 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                         } else if let Some((id, name)) = app {
                             n.end_alert();
                             bg::spawn(move || shell::open_app(&id, &name));
+                        } else if open == Some("update") {
+                            // "FathNotch vX is ready": restart into the new version.
+                            n.end_alert();
+                            services::updater::restart();
+                            PostQuitMessage(0);
                         } else {
                             if n.has_alert() {
                                 n.end_alert();
@@ -936,7 +941,15 @@ fn main() -> Result<()> {
         // One copy at a time (screenshot runs don't count).
         let _mutex = CreateMutexW(None, true, w!("FathNotch.Rust.SingleInstance"))?;
         if shot.is_none() && GetLastError() == ERROR_ALREADY_EXISTS {
-            return Ok(());
+            // Restarted after an update: wait (up to 15 s) for the old copy to quit, then take over.
+            let after_update = std::env::args().any(|a| a == "--after-update");
+            let got = after_update && {
+                let r = windows::Win32::System::Threading::WaitForSingleObject(_mutex, 15_000);
+                r == windows::Win32::Foundation::WAIT_OBJECT_0 || r == windows::Win32::Foundation::WAIT_ABANDONED
+            };
+            if !got {
+                return Ok(());
+            }
         }
         // OLE (an STA) for drag and drop, WIC and the shell.
         let _ = windows::Win32::System::Ole::OleInitialize(None);
@@ -1007,6 +1020,9 @@ fn main() -> Result<()> {
         }
         SetTimer(hwnd, TIMER_EYES, (settings::get().idle_eyes_every_sec.max(20) as u32) * 1000, None);
         model::start();
+        if shot.is_none() {
+            services::updater::start();
+        }
         // Control → Awake survives restarts (on the window thread, which lives as long as the app).
         if shot.is_none() && settings::get().keep_awake {
             services::awake::apply(true);

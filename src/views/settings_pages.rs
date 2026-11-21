@@ -111,6 +111,24 @@ pub fn general(p: &mut Pg) {
         }
     }
     p.tog(rr[1], s.low_memory_mode, |x, v| x.low_memory_mode = v);
+
+    let status = crate::services::updater::status();
+    let check_w = p.button_w("Check now");
+    let rr = p.card(
+        Some("UPDATES"),
+        &[
+            R::t("Automatic updates", "Look for a new FathNotch release on GitHub now and then, download it and swap it in. A pop-up offers to restart; otherwise it starts the next time."),
+            R::c(
+                format!("Version {}", crate::services::updater::VERSION),
+                if status.is_empty() { "Not checked yet this session.".to_string() } else { status },
+                check_w,
+            ),
+        ],
+    );
+    p.tog(rr[0], s.auto_update, |x, v| x.auto_update = v);
+    if p.button(rr[1], "Check now", false) {
+        crate::services::updater::check_now();
+    }
 }
 
 // ---------------------------------------------------------------- Appearance

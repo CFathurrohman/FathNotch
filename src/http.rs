@@ -75,3 +75,20 @@ pub fn escape(s: &str) -> String {
     }
     out
 }
+
+/// GET a file as raw bytes (redirects are followed); Err on a transport failure or a non-2xx answer.
+pub fn get_bytes(url: &str) -> Result<Vec<u8>> {
+    let client = HttpClient::new()?;
+    let request = HttpRequestMessage::Create(&HttpMethod::Get()?, &Uri::CreateUri(&HSTRING::from(url))?)?;
+    request.Headers()?.TryAppendWithoutValidation(&HSTRING::from("User-Agent"), &HSTRING::from("FathNotch/0.2"))?;
+    let response = client.SendRequestAsync(&request)?.get()?;
+    let status = response.StatusCode()?.0;
+    if !(200..300).contains(&status) {
+        return Err(Error::new(windows::Win32::Foundation::E_FAIL, format!("HTTP {status}")));
+    }
+    let buffer = response.Content()?.ReadAsBufferAsync()?.get()?;
+    let reader = windows::Storage::Streams::DataReader::FromBuffer(&buffer)?;
+    let mut bytes = vec![0u8; buffer.Length()? as usize];
+    reader.ReadBytes(&mut bytes)?;
+    Ok(bytes)
+}

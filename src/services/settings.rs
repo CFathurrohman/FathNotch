@@ -53,6 +53,8 @@ pub struct Settings {
     pub download_alerts: bool,
     pub track_peek: bool,
     pub low_memory_mode: bool,
+    /// Check GitHub for a newer release and install it (Settings → General → Updates).
+    pub auto_update: bool,
     pub notch_border: bool,
     /// Caps Lock / Num Lock.
     pub lock_key_alerts: bool,
@@ -207,6 +209,7 @@ impl Default for Settings {
             download_alerts: true,
             track_peek: false,
             low_memory_mode: true,
+            auto_update: true,
             notch_border: true,
             lock_key_alerts: true,
             privacy_indicator: true,

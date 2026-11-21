@@ -13,6 +13,9 @@ use windows::Media::Control::{
     GlobalSystemMediaTransportControlsSessionPlaybackStatus as Status,
 };
 use windows::Storage::Streams::{DataReader, IInputStream};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    keybd_event, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_MEDIA_NEXT_TRACK, VK_MEDIA_PLAY_PAUSE, VK_MEDIA_PREV_TRACK,
+};
 use windows::core::Interface;
 
 #[derive(Clone, Debug)]
@@ -73,11 +76,13 @@ struct State {
     manager: Option<Manager>,
     hooked: Option<Hooked>,
     now: Option<NowPlaying>,
+    /// The last seek (wall-clock ticks, and when): timeline reports older than it are stale.
+    seek: Option<(i64, Instant, f64)>,
 }
 
 fn state() -> &'static Mutex<State> {
     static S: OnceLock<Mutex<State>> = OnceLock::new();
-    S.get_or_init(|| Mutex::new(State { manager: None, hooked: None, now: None }))
+    S.get_or_init(|| Mutex::new(State { manager: None, hooked: None, now: None, seek: None }))
 }
 
 fn lock() -> std::sync::MutexGuard<'static, State> {
@@ -93,31 +98,82 @@ pub fn start() {
     let Ok(manager) = Manager::RequestAsync().and_then(|op| op.get()) else { return };
     let _ = manager.CurrentSessionChanged(&TypedEventHandler::new(|m: &Option<Manager>, _| {
         if let Some(m) = m {
-            hook(m.GetCurrentSession().ok());
+            reselect(m);
         }
         Ok(())
     }));
     // Some players come and go without the current session changing; re-check then too.
     let _ = manager.SessionsChanged(&TypedEventHandler::new(|m: &Option<Manager>, _| {
         if let Some(m) = m {
-            let now = m.GetCurrentSession().ok();
-            let same = {
-                let s = lock();
-                match (&s.hooked, &now) {
-                    (Some(h), Some(n)) => h.session.as_raw() == n.as_raw(),
-                    (None, None) => true,
-                    _ => false,
-                }
-            };
-            if !same {
-                hook(now);
-            }
+            reselect(m);
         }
         Ok(())
     }));
-    let current = manager.GetCurrentSession().ok();
-    lock().manager = Some(manager);
-    hook(current);
+    lock().manager = Some(manager.clone());
+    reselect(&manager);
+    // A player starting or pausing doesn't always tell the manager: look again every couple of seconds.
+    crate::bg::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        reselect(&manager);
+    });
+}
+
+/// Follows the best player: music over video. Windows' own pick is simply the last one that changed,
+/// so a YouTube video in a browser would push Spotify or YouTube Music (and their lyrics) aside.
+fn reselect(m: &Manager) {
+    let windows_pick = m.GetCurrentSession().ok();
+    let mut sessions: Vec<Session> = m.GetSessions().map(|v| v.into_iter().collect()).unwrap_or_default();
+    if sessions.is_empty() {
+        sessions.extend(windows_pick.clone());
+    }
+    let hooked = lock().hooked.as_ref().map(|h| h.session.as_raw());
+    let best = sessions
+        .into_iter()
+        .map(|s| {
+            let raw = s.as_raw();
+            // Ties: stay on the player we follow, then Windows' pick.
+            let tie = if Some(raw) == hooked { 2 } else if windows_pick.as_ref().is_some_and(|w| w.as_raw() == raw) { 1 } else { 0 };
+            (score(&s), tie, s)
+        })
+        .max_by_key(|(sc, tie, _)| (*sc, *tie))
+        .map(|(_, _, s)| s);
+    let same = match (&best, hooked) {
+        (Some(b), Some(h)) => b.as_raw() == h,
+        (None, None) => true,
+        _ => false,
+    };
+    if !same {
+        hook(best);
+    }
+}
+
+/// How much a player is worth following: playing beats paused; a music app (or a browser tab that names
+/// an album, as YouTube Music does) beats a video.
+fn score(s: &Session) -> i32 {
+    let playing = s.GetPlaybackInfo().and_then(|i| i.PlaybackStatus()).is_ok_and(|st| st == Status::Playing);
+    let aumid = s.SourceAppUserModelId().map(|a| a.to_string_lossy().to_lowercase()).unwrap_or_default();
+    let kind = if is_music_app(&aumid) {
+        50
+    } else if is_browser(&aumid) {
+        let album = s.TryGetMediaPropertiesAsync().and_then(|op| op.get()).and_then(|p| p.AlbumTitle()).map(|a| !a.is_empty()).unwrap_or(false);
+        if album { 40 } else { 0 }
+    } else {
+        20
+    };
+    kind + if playing { 100 } else { 0 }
+}
+
+fn is_music_app(aumid: &str) -> bool {
+    const MUSIC: [&str; 18] = [
+        "metrolist", "innertune", "vimusic", "namida", "spotify", "applemusic", "zune", "tidal", "deezer", "amazonmusic", "youtube-music", "youtubemusic",
+        // YouTube Music installed as an app from Chrome or Edge.
+        "cinhimbnkkaeohfgghhklpknlkffjgod", "musicbee", "foobar", "aimp", "winamp", "itunes",
+    ];
+    MUSIC.iter().any(|m| aumid.contains(m))
+}
+
+fn is_browser(aumid: &str) -> bool {
+    ["msedge", "chrome", "firefox", "brave", "opera", "vivaldi"].iter().any(|b| aumid.contains(b)) && !aumid.contains("_crx_")
 }
 
 /// Follows `session` (or nothing), dropping the previous one's subscriptions.
@@ -269,10 +325,19 @@ fn refresh_timeline(session: &Session) {
             position += age;
         }
     }
+    let stale = stale_after_seek(stamp, position);
     update(session, |now| {
         now.duration = duration;
-        now.position = if duration > 0.0 { position.min(duration) } else { position };
-        now.updated = Instant::now();
+        if stale {
+            // Keep our post-seek playhead; only follow a play/pause change.
+            if now.playing != playing {
+                now.position = now.position_now();
+                now.updated = Instant::now();
+            }
+        } else {
+            now.position = if duration > 0.0 { position.min(duration) } else { position };
+            now.updated = Instant::now();
+        }
         now.playing = playing;
     });
 }
@@ -330,41 +395,109 @@ fn session() -> Option<Session> {
     lock().hooked.as_ref().map(|h| h.session.clone())
 }
 
+/// Play or pause. Some players ignore "toggle" (or report it disabled) while they accept a plain Play or
+/// Pause, and the hooked session can lag behind a player that just took over; so: ask for the specific
+/// action the player says it supports, then toggle, and if the player still says no, press the keyboard's
+/// media Play/Pause key, which Windows hands to whichever player is current.
 pub fn play_pause() {
-    if let Some(s) = session() {
-        let _ = s.TryTogglePlayPauseAsync().and_then(|op| op.get());
+    let ok = session().is_some_and(|s| {
+        let info = s.GetPlaybackInfo().ok();
+        let playing = info.as_ref().and_then(|i| i.PlaybackStatus().ok()).is_some_and(|st| st == Status::Playing);
+        let controls = info.as_ref().and_then(|i| i.Controls().ok());
+        let can_pause = controls.as_ref().and_then(|c| c.IsPauseEnabled().ok()).unwrap_or(false);
+        let can_play = controls.as_ref().and_then(|c| c.IsPlayEnabled().ok()).unwrap_or(false);
+        let specific = if playing && can_pause {
+            s.TryPauseAsync().and_then(|op| op.get()).unwrap_or(false)
+        } else if !playing && can_play {
+            s.TryPlayAsync().and_then(|op| op.get()).unwrap_or(false)
+        } else {
+            false
+        };
+        specific || s.TryTogglePlayPauseAsync().and_then(|op| op.get()).unwrap_or(false)
+    });
+    if !ok {
+        media_key(VK_MEDIA_PLAY_PAUSE);
     }
 }
 
 pub fn next() {
-    if let Some(s) = session() {
-        let _ = s.TrySkipNextAsync().and_then(|op| op.get());
+    if !session().is_some_and(|s| s.TrySkipNextAsync().and_then(|op| op.get()).unwrap_or(false)) {
+        media_key(VK_MEDIA_NEXT_TRACK);
     }
 }
 
 pub fn previous() {
-    if let Some(s) = session() {
-        let _ = s.TrySkipPreviousAsync().and_then(|op| op.get());
+    if !session().is_some_and(|s| s.TrySkipPreviousAsync().and_then(|op| op.get()).unwrap_or(false)) {
+        media_key(VK_MEDIA_PREV_TRACK);
+    }
+}
+
+/// Presses and releases a media key (the player didn't take the request).
+fn media_key(vk: VIRTUAL_KEY) {
+    unsafe {
+        keybd_event(vk.0 as u8, 0, KEYEVENTF_EXTENDEDKEY, 0);
+        keybd_event(vk.0 as u8, 0, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, 0);
     }
 }
 
 /// Jumps to `seconds` into the track.
 pub fn seek(seconds: f64) {
     let Some(s) = session() else { return };
-    let ticks = (seconds.max(0.0) * 10_000_000.0) as i64;
+    let seconds = seconds.max(0.0);
+    // Show the new position right away (the request can take a moment), and remember the seek so a
+    // timeline report the player made before it doesn't pull the playhead back.
+    let before = current().map(|n| (n.position, n.updated));
+    lock().seek = Some((now_ticks(), Instant::now(), seconds));
+    update(&s, |now| {
+        now.position = seconds;
+        now.updated = Instant::now();
+    });
+    // The player counts from its timeline's start, which isn't always 0.
+    let start = s.GetTimelineProperties().and_then(|t| t.StartTime()).map(|d| d.Duration).unwrap_or(0);
+    let ticks = start + (seconds * 10_000_000.0) as i64;
     let ok = s.TryChangePlaybackPositionAsync(ticks).and_then(|op| op.get()).unwrap_or(false);
-    if ok {
-        // Show the new position right away; the player's timeline update follows.
-        update(&s, |now| {
-            now.position = seconds.max(0.0);
-            now.updated = Instant::now();
-        });
+    if !ok {
+        // The player said no: put the playhead back where it really is.
+        lock().seek = None;
+        if let Some((pos, at)) = before {
+            update(&s, |now| {
+                now.position = pos;
+                now.updated = at;
+            });
+        }
     }
+}
+
+/// True when a timeline report should be ignored: made before the last seek, or (when the player
+/// doesn't stamp its reports) arriving right after it with a position far from where we jumped.
+fn stale_after_seek(stamp: i64, position: f64) -> bool {
+    let Some((seek_ticks, at, target)) = lock().seek else { return false };
+    let since = at.elapsed().as_secs_f64();
+    if since > 6.0 {
+        return false;
+    }
+    if stamp > 0 {
+        return stamp < seek_ticks;
+    }
+    since < 2.0 && (position - (target + since)).abs() > 2.0
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ignores_reports_from_before_a_seek() {
+        let t = now_ticks();
+        lock().seek = Some((t, Instant::now(), 120.0));
+        assert!(stale_after_seek(t - 5_000_000, 30.0)); // stamped half a second before the seek
+        assert!(!stale_after_seek(t + 5_000_000, 120.5)); // stamped after it: follow it
+        assert!(stale_after_seek(0, 30.0)); // unstamped and far from the target, right after
+        assert!(!stale_after_seek(0, 120.2)); // unstamped and where we jumped
+        lock().seek = Some((t, Instant::now() - std::time::Duration::from_secs(10), 120.0));
+        assert!(!stale_after_seek(t - 5_000_000, 30.0)); // long after the seek: trust the player again
+        lock().seek = None;
+    }
 
     #[test]
     fn app_names() {
@@ -373,6 +506,36 @@ mod tests {
         assert_eq!(pretty_app("Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic"), "Media Player");
         assert_eq!(pretty_app("SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify"), "Spotify");
         assert_eq!(pretty_app("Chrome"), "Google Chrome");
+    }
+
+    #[test]
+    fn music_beats_video() {
+        assert!(is_music_app("spotify.exe"));
+        assert!(is_music_app("spotifyab.spotifymusic_zpdnekdrzrea0!spotify"));
+        assert!(is_music_app("chrome._crx_cinhimbnkkaeohfgghhklpknlkffjgod"));
+        assert!(is_music_app("com.github.th-ch.youtube-music"));
+        assert!(is_music_app("metrolist"));
+        assert!(!is_music_app("msedge"));
+        assert!(is_browser("msedge"));
+        assert!(is_browser("chrome"));
+        assert!(!is_browser("chrome._crx_cinhimbnkkaeohfgghhklpknlkffjgod"));
+        assert!(!is_browser("spotify.exe"));
+    }
+
+    /// The players Windows knows about right now, with the score each gets (app and state only).
+    #[test]
+    #[ignore]
+    fn session_scores() {
+        unsafe {
+            let _ = windows::Win32::System::Com::CoInitializeEx(None, windows::Win32::System::Com::COINIT_MULTITHREADED);
+        }
+        let m = Manager::RequestAsync().and_then(|op| op.get()).unwrap();
+        for s in m.GetSessions().unwrap() {
+            println!("{:<30} score {}", pretty_app(&s.SourceAppUserModelId().unwrap().to_string_lossy()), score(&s));
+        }
+        start();
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        println!("following: {:?}", current().map(|n| n.app));
     }
 
     #[test]

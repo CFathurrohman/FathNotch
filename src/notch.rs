@@ -1240,8 +1240,8 @@ impl Notch {
                 let k = (secs / TOOL_ANIM_SECS).clamp(0.0, 1.0);
                 ui.animate = true;
                 if self.tool != "prayer" {
-                    // Prayer has its own entrance.
-                    ui.start_stagger(secs);
+                    // Prayer has its own entrance; Home, opened most often, comes in quicker than the others.
+                    ui.start_stagger(if self.tool == "home" { secs * 1.8 } else { secs });
                     staggering = true;
                 }
                 if k >= 1.0 && secs > TOOL_ANIM_SECS + 0.9 {
