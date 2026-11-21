@@ -1,0 +1,85 @@
+/* "Try it" simulator: a small desktop with a working FathNotch on top. */
+.sim-wrap { display: grid; gap: 14px; }
+.sim-screen {
+  position: relative; width: 100%; aspect-ratio: 16 / 9; border-radius: 18px; overflow: hidden;
+  border: 1px solid var(--line); box-shadow: 0 30px 70px rgba(0, 0, 0, .5);
+  background:
+    radial-gradient(60% 70% at 20% 30%, #3b2a6e 0%, transparent 60%),
+    radial-gradient(50% 60% at 85% 70%, #1d4d6b 0%, transparent 60%),
+    linear-gradient(160deg, #141826, #07080d);
+  user-select: none; -webkit-user-select: none;
+}
+.sim-taskbar {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 7%; min-height: 26px;
+  background: rgba(20, 22, 30, .78); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.sim-taskbar i { width: 18px; height: 18px; border-radius: 5px; background: rgba(255, 255, 255, .18); display: block; }
+.sim-taskbar i:first-child { background: linear-gradient(135deg, #5aa0ff, #2b6cff); }
+
+/* The notch: one black shape that changes size; the states fade in and out inside it. */
+.sim-notch {
+  position: absolute; top: 2.2%; left: 50%; transform: translateX(-50%);
+  width: 132px; height: 32px; border-radius: 16px; background: #000; overflow: hidden; cursor: pointer;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .06), 0 14px 40px rgba(0, 0, 0, .55);
+  transition: width .55s cubic-bezier(.32, 1.3, .45, 1), height .55s cubic-bezier(.32, 1.3, .45, 1), border-radius .55s cubic-bezier(.32, 1.3, .45, 1);
+  font: 600 12.5px/1 Inter, system-ui, sans-serif; color: #fff;
+}
+.sim-notch > .st { position: absolute; inset: 0; opacity: 0; pointer-events: none; transition: opacity .25s ease; }
+.sim-notch.idle > .st-idle, .sim-notch.music > .st-music, .sim-notch.alert > .st-alert, .sim-notch.open > .st-open { opacity: 1; pointer-events: auto; transition-delay: .18s; }
+
+.st-idle { display: flex; align-items: center; justify-content: space-between; padding: 0 14px; }
+.st-idle svg { width: 13px; height: 13px; fill: #8a90a2; }
+
+.sim-notch.music { width: min(380px, 78%); }
+.st-music { display: flex; align-items: center; gap: 10px; padding: 0 12px; }
+.st-music canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.st-music .art { position: relative; width: 22px; height: 22px; border-radius: 6px; flex: none; background: linear-gradient(135deg, #ff7aa8, #7a5cff 55%, #2bd2ff); }
+.st-music .line { position: relative; flex: 1; white-space: nowrap; overflow: hidden; color: rgba(255, 255, 255, .42); }
+.st-music .line b { position: absolute; left: 0; top: 0; color: #fff; font-weight: 600; white-space: nowrap; overflow: hidden; width: 0; }
+.st-music .eq { position: relative; display: flex; gap: 2.5px; align-items: center; height: 14px; }
+.st-music .eq span { width: 2.5px; border-radius: 2px; background: #c9b8ff; height: 4px; transition: height .12s ease; }
+
+.sim-notch.alert { width: min(360px, 76%); height: 62px; border-radius: 31px; }
+.st-alert { display: flex; align-items: center; gap: 12px; padding: 0 16px; }
+.st-alert .tile { width: 36px; height: 36px; border-radius: 10px; background: #1b1e29; display: grid; place-items: center; flex: none; }
+.st-alert .tile svg { width: 18px; height: 18px; fill: #fff; }
+.st-alert .tx { line-height: 1.3; flex: 1; }
+.st-alert .tx small { display: block; color: #8a90a2; font-weight: 400; font-size: 11.5px; }
+.st-alert .x { width: 26px; height: 26px; border-radius: 8px; background: #1b1e29; display: grid; place-items: center; color: #8a90a2; font-size: 13px; }
+
+.sim-screen { container-type: inline-size; }
+/* Sized so a screenshot's content area (its middle two thirds) fits exactly. */
+.sim-notch.open { width: min(640px, 94cqw); height: calc(min(640px, 94cqw) * 0.2833 + 70px); border-radius: 26px; cursor: default; }
+.st-open { display: flex; flex-direction: column; padding: 12px 16px 10px; }
+.st-open .head { display: flex; justify-content: space-between; align-items: center; color: #fff; font-size: 13px; }
+.st-open .head span { color: #8a90a2; font-weight: 500; }
+.st-open .body { position: relative; flex: none; aspect-ratio: 634 / 180; margin: 8px 0; overflow: hidden; border-radius: 12px; transform-origin: 0 0; will-change: transform, opacity; }
+/* The screenshots carry their own header and tab bar: show only the tab's content. */
+.st-open .body img { position: absolute; left: 0; top: 0; width: 100%; height: auto; transform: translateY(-16.5%); }
+.st-open .tabs { display: flex; justify-content: center; gap: 4px; }
+.st-open .tabs button {
+  width: 30px; height: 26px; border-radius: 8px; border: 0; background: transparent; color: #8a90a2; cursor: pointer;
+  display: grid; place-items: center; transition: background .2s ease, color .2s ease;
+}
+.st-open .tabs button:hover { background: #1b1e29; color: #fff; }
+.st-open .tabs button.on { background: #1f2330; color: #fff; }
+.st-open .tabs svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+
+.sim-hint { position: absolute; left: 50%; top: 16%; transform: translateX(-50%); color: rgba(255, 255, 255, .55); font-size: 12px; pointer-events: none; transition: opacity .3s ease; white-space: nowrap; }
+.sim-controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.sim-controls button {
+  font: 600 13.5px Inter, system-ui, sans-serif; color: var(--text); background: var(--surface-2); border: 1px solid var(--line);
+  padding: 9px 15px; border-radius: 11px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: background .2s, transform .2s, border-color .2s;
+}
+.sim-controls button:hover { background: #1d2130; transform: translateY(-1px); }
+.sim-controls button.on { border-color: var(--accent); color: #fff; }
+.sim-controls svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.sim-note { text-align: center; color: var(--sub); font-size: 13px; margin: 0; }
+
+@media (max-width: 620px) {
+  .sim-screen { aspect-ratio: 4 / 3; }
+  .st-open .head span { display: none; }
+  .sim-notch { font-size: 11px; }
+  .st-open .tabs button { width: 26px; }
+}

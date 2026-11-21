@@ -101,6 +101,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="sim.css">
 <style>
   :root {
     --bg: #000;
@@ -322,6 +323,7 @@
   <div class="wrap">
     <a class="brand" href="#"><img src="icon.svg" alt="">FathNotch</a>
     <nav>
+      <a href="#try">Try it</a>
       <a href="#features">Features</a>
       <a href="#tools">Tools</a>
       <a href="#screenshots">Screenshots</a>
@@ -374,6 +376,58 @@
       </div>
     </div>
   </div>
+
+  <section id="try">
+    <div class="wrap">
+      <p class="eyebrow reveal">Try it</p>
+      <h2 class="reveal">Play with the notch.</h2>
+      <p class="sec-lead reveal">A small simulation in your browser: click the notch, or pick a moment below. In the real app it sits at the top of your screen the same way.</p>
+      <div class="sim-wrap reveal">
+        <div class="sim-screen" id="simScreen">
+          <div class="sim-notch idle" id="simNotch" role="button" aria-label="FathNotch simulation">
+            <div class="st st-idle">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 10.6V6h-2v7.4l5 3 1-1.7-4-2.1z"/></svg>
+              <span id="simClock">12:00</span>
+            </div>
+            <div class="st st-music">
+              <canvas id="simAurora" aria-hidden="true"></canvas>
+              <span class="art"></span>
+              <div class="line" id="simLine">City lights are humming low<b id="simSung"></b></div>
+              <div class="eq" id="simEq"><span></span><span></span><span></span><span></span></div>
+            </div>
+            <div class="st st-alert">
+              <div class="tile"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 1.7a.75.75 0 0 1 .2.8A8.3 8.3 0 0 0 9 6a9 9 0 0 0 9 9 8.3 8.3 0 0 0 3.5-.7.75.75 0 0 1 1 1A10.5 10.5 0 1 1 8.7 1.6a.75.75 0 0 1 .8.1z"/></svg></div>
+              <div class="tx">Ashar in 10 min<small>15:02 · Jakarta</small></div>
+              <div class="x">✕</div>
+            </div>
+            <div class="st st-open">
+              <div class="head"><b>FathNotch</b><span>Click a tab · click outside to close</span></div>
+              <div class="body" id="simBody"><img id="simPanelImg" src="images/prayer.png" alt="Prayer tab"></div>
+              <div class="tabs" id="simTabs">
+                <button data-img="images/prayer.png" aria-label="Prayer"><svg viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+                <button data-img="images/alarm.png" aria-label="Timers"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></button>
+                <button data-img="images/todos.png" aria-label="To-Dos"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></svg></button>
+                <button data-img="images/calendar.png" aria-label="Calendar"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg></button>
+                <button data-img="images/shelf.png" aria-label="Shelf"><svg viewBox="0 0 24 24"><path d="M3 7h18v13H3zM3 7l2-4h14l2 4M9 11h6"/></svg></button>
+                <button data-img="images/emoji.png" aria-label="Emoji"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01"/></svg></button>
+                <button data-img="images/phone.png" aria-label="Phone"><svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg></button>
+                <button data-img="images/settings.png" aria-label="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+              </div>
+            </div>
+          </div>
+          <div class="sim-hint" id="simHint">Click the notch</div>
+          <div class="sim-taskbar"><i></i><i></i><i></i><i></i><i></i></div>
+        </div>
+        <div class="sim-controls">
+          <button data-state="idle"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Idle</button>
+          <button data-state="music"><svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>Music &amp; lyrics</button>
+          <button data-state="alert"><svg viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>Notification</button>
+          <button data-state="open"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Open panel</button>
+        </div>
+        <p class="sim-note">The music is a made-up sample; in the app the lyrics, cover colours and beat come from what's actually playing.</p>
+      </div>
+    </div>
+  </section>
 
   <section id="features">
     <div class="wrap">
@@ -592,5 +646,6 @@ cargo build --release
     addEventListener('keydown', e => { if (e.key === 'Escape') lb.classList.remove('open'); });
   })();
 </script>
+<script src="sim.js"></script>
 </body>
 </html>
