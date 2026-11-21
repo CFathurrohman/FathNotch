@@ -686,3 +686,41 @@ mod bt_probe {
         }
     }
 }
+
+/// How loud the default speakers are playing right now, 0..1 (the peak meter Windows' mixer shows; no audio
+/// is captured). The meter is looked up again every few seconds, so a new default device is followed.
+pub fn output_peak() -> f32 {
+    use windows::Win32::Media::Audio::Endpoints::IAudioMeterInformation;
+    thread_local! {
+        static METER: std::cell::RefCell<(Option<IAudioMeterInformation>, Option<std::time::Instant>)> = const { std::cell::RefCell::new((None, None)) };
+    }
+    METER.with(|m| {
+        let mut m = m.borrow_mut();
+        if m.1.map_or(true, |at| at.elapsed() > Duration::from_secs(4)) {
+            m.0 = enumerator()
+                .and_then(|e| default_device(&e, false))
+                .and_then(|d| unsafe { d.Activate::<IAudioMeterInformation>(CLSCTX_ALL, None).ok() });
+            m.1 = Some(std::time::Instant::now());
+        }
+        m.0.as_ref().and_then(|meter| unsafe { meter.GetPeakValue().ok() }).unwrap_or(0.0).clamp(0.0, 1.0)
+    })
+}
+
+#[cfg(test)]
+mod peak_probe {
+    /// Prints the speaker peak level a few times a second (play some music first).
+    #[test]
+    #[ignore]
+    fn peak_levels() {
+        unsafe {
+            let _ = windows::Win32::System::Com::CoInitializeEx(None, windows::Win32::System::Com::COINIT_MULTITHREADED);
+        }
+        let v: Vec<String> = (0..20)
+            .map(|_| {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                format!("{:.2}", super::output_peak())
+            })
+            .collect();
+        println!("peaks: {}", v.join(" "));
+    }
+}

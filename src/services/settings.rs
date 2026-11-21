@@ -128,8 +128,6 @@ pub struct Settings {
     pub header_clock: bool,
     /// How fast the panel animates: "Off" | "Fast" | "Normal" | "Slow".
     pub anim_speed: String,
-    /// Tabs grow out of their icon in the tab bar (the panel out of the notch) with a springy motion.
-    pub fluid_open: bool,
     pub rest_glow: bool,
     pub idle_eyes: bool,
     pub idle_eyes_every_sec: i32,
@@ -262,7 +260,6 @@ impl Default for Settings {
             look_version: 0,
             header_clock: true,
             anim_speed: "Normal".into(),
-            fluid_open: true,
             rest_glow: true,
             idle_eyes: true,
             idle_eyes_every_sec: 45,

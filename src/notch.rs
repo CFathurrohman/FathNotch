@@ -110,6 +110,9 @@ pub struct Notch {
     tool_anim: Option<(Instant, f32)>,
     /// Where the tool being opened grows from (its tab icon, layout units); None: the notch.
     tool_from: Option<Rect>,
+    /// Lyric glow following the music: beat envelope 0..1, the loudest level heard lately (auto gain),
+    /// and when it was last updated.
+    beat: (f32, f32, Option<Instant>),
     alert: Option<Alert>,
     queue: VecDeque<Alert>,
     pub alert_until: Option<Instant>,
@@ -448,6 +451,7 @@ impl Notch {
             back: None,
             tool_anim: None,
             tool_from: None,
+            beat: (0.0, 0.1, None),
             alert: None,
             queue: VecDeque::new(),
             alert_until: None,
@@ -989,6 +993,48 @@ impl Notch {
         match model::activity() {
             model::Activity::Music => {
                 if let Some(np) = model::now_playing() {
+                    // Settings → Display "Lyric glow": while a lyric line shows, an aurora in the song's colours
+                    // (from its album art) shimmers up from the bottom edge: a few soft lights drifting side
+                    // to side and blending, kept inside the notch's shape.
+                    let s = settings::shared();
+                    if s.rest_glow && s.lyrics_in_notch && model::lyric_line().is_some() {
+                        let mut colors = np.art.as_ref().map(|bytes| g.image_palette(np.art_id, bytes)).unwrap_or_default();
+                        if colors.is_empty() {
+                            colors.push(t.accent);
+                        }
+                        let time = model::clock_secs() as f32;
+                        // Follow the beat: how loud the speakers are now, against the loudest lately (so it
+                        // works at any volume); jumps up on a hit, then eases back down.
+                        let peak = crate::services::audio::output_peak();
+                        let (mut env, mut loud, last) = self.beat;
+                        let dt = last.map_or(0.016, |l| l.elapsed().as_secs_f32()).min(0.1);
+                        loud = (loud - dt * 0.08).max(0.08).max(peak);
+                        let level = (peak / loud).clamp(0.0, 1.0);
+                        // Only the part above a quiet floor counts, so steady sound doesn't keep it lit.
+                        let hit = ((level - 0.35) / 0.65).clamp(0.0, 1.0);
+                        env = if hit > env { env + (hit - env) * 0.6 } else { (env - dt * 2.2).max(hit) };
+                        self.beat = (env, loud, Some(Instant::now()));
+                        let g = &self.gfx;
+                        if let Ok(geo) = o.build(&g.factory) {
+                            g.push_shape_clip(&geo.into());
+                            // Three lights (colours repeat when the cover has fewer), each on its own path,
+                            // drifting quicker and swelling with every beat.
+                            let paths = [(0.22f32, 0.75f32, 0.0f32), (0.5, 0.55, 2.1), (0.78, 0.9, 4.2)];
+                            for (i, (home, speed, phase)) in paths.iter().enumerate() {
+                                let c = colors[i % colors.len()];
+                                let x = r.x + r.w * (home + 0.17 * (time * speed + phase).sin());
+                                let rise = 0.8 + 0.2 * (time * (speed * 1.7) + phase * 1.3).sin();
+                                let rx = r.w * (0.28 + 0.05 * (time * speed * 0.8 + phase).cos()) * (0.92 + 0.25 * env);
+                                // Kept low and light so the lyric above stays easy to read: it lives in the bottom
+                                // third of the notch and only flares a little on a beat.
+                                let ry = r.h * (0.42 + 0.3 * env) * rise;
+                                g.glow(x, r.bottom() + r.h * 0.22, rx, ry, with_alpha(c, a * (0.26 + 0.22 * env)));
+                            }
+                            g.pop_shape_clip();
+                        }
+                        self.busy = true;
+                    }
+                    let g = &self.gfx;
                     // Art on the left, title or the current lyric line, equalizer on the right.
                     let art = Rect::new(r.x + 12.0, r.cy() - 11.0, 22.0, 22.0);
                     if g.has_image(np.art_id) {
@@ -1140,16 +1186,6 @@ impl Notch {
                         g.text(&it.value, fs, SEMIBOLD, Rect::new(r.x + 12.0 + gs, r.y + dy, r.w - 25.0 - gs, r.h).d2d(), Align::Right, with_alpha(t.text, aa));
                     }
                 }
-                // Settings → Display "Lyric glow / rest glow": a soft accent glow along the bottom while resting.
-                if settings::shared().rest_glow {
-                    // Fades upward and toward the ends (layers of thin lines, each fainter and shorter).
-                    for i in 0..6 {
-                        let k = i as f32;
-                        let half = r.w * (0.30 - k * 0.035);
-                        let alpha = 0.045 * (1.0 - k / 6.0);
-                        g.line(r.cx() - half, r.bottom() - 1.0 - k, r.cx() + half, r.bottom() - 1.0 - k, with_alpha(t.accent, a * alpha), 1.0);
-                    }
-                }
             }
         }
     }
@@ -1276,10 +1312,10 @@ impl Notch {
         // side of its tab (or rising, when opened straight on it).
         // On top, its cards and rows come in one after another, each fading in and rising into place.
         let mut staggering = false;
-        // Settings → Display → "Open from icon": the tool grows out of its tab icon (or out of the notch
+        // The tool grows out of its tab icon (or out of the notch
         // when the panel opens) like an app opening on macOS: a rounded card swells from the icon's frame to
         // the whole content area on a spring (a touch of overshoot, then it settles), the content inside it.
-        let fluid = settings::shared().fluid_open && settings::anim_scale() > 0.0;
+        let fluid = settings::anim_scale() > 0.0;
         let mut morph: Option<(f32, Rect)> = None;
         let shift = match self.tool_anim {
             Some((at, dir)) => {

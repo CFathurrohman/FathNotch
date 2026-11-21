@@ -90,6 +90,8 @@ pub struct Gfx {
     icons: RefCell<HashMap<&'static str, (ID2D1PathGeometry, f32, f32)>>,
     /// Decoded images by key, with the frame they were last drawn in (least recently used are dropped).
     images: RefCell<HashMap<u64, (ID2D1Bitmap, u64)>>,
+    /// image_palette results by image key.
+    colors: RefCell<HashMap<u64, Vec<Color>>>,
     tick: std::cell::Cell<u64>,
     /// Rows (px) of the canvas used by the current frame.
     region: std::cell::Cell<i32>,
@@ -182,6 +184,7 @@ impl Gfx {
                 inter,
                 icons: RefCell::new(HashMap::new()),
                 images: RefCell::new(HashMap::new()),
+                colors: RefCell::new(HashMap::new()),
                 tick: std::cell::Cell::new(0),
                 region: std::cell::Cell::new(px_h),
                 region_x: std::cell::Cell::new((0, px_w)),
@@ -543,6 +546,133 @@ impl Gfx {
         self.rt.CreateBitmapFromWicBitmap(&conv, None).ok()
     }
 
+    /// The colours an image is known for (album art → the song's colours): up to three distinct vivid hues,
+    /// most present first, each brightened enough to glow on black. Cached per key.
+    pub fn image_palette(&self, key: u64, bytes: &[u8]) -> Vec<Color> {
+        if let Some(c) = self.colors.borrow().get(&key) {
+            return c.clone();
+        }
+        let c = unsafe { Self::palette(bytes) }.unwrap_or_default();
+        self.colors.borrow_mut().insert(key, c.clone());
+        c
+    }
+
+    unsafe fn palette(bytes: &[u8]) -> Option<Vec<Color>> {
+        let wic: IWICImagingFactory = CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER).ok()?;
+        let stream = wic.CreateStream().ok()?;
+        stream.InitializeFromMemory(bytes).ok()?;
+        let decoder = wic.CreateDecoderFromStream(&stream, std::ptr::null(), WICDecodeMetadataCacheOnDemand).ok()?;
+        let frame = decoder.GetFrame(0).ok()?;
+        let scaler = wic.CreateBitmapScaler().ok()?;
+        scaler.Initialize(&frame, 32, 32, WICBitmapInterpolationModeFant).ok()?;
+        let conv = wic.CreateFormatConverter().ok()?;
+        conv.Initialize(&scaler, &GUID_WICPixelFormat32bppBGRA, WICBitmapDitherTypeNone, None, 0.0, WICBitmapPaletteTypeMedianCut).ok()?;
+        let mut px = vec![0u8; 32 * 32 * 4];
+        conv.CopyPixels(std::ptr::null(), 32 * 4, &mut px).ok()?;
+        // Twelve hue buckets; each pixel votes by how vivid it is, keeping a running colour per bucket.
+        const N: usize = 12;
+        let mut buckets = [(0.0f32, 0.0f32, 0.0f32, 0.0f32); N];
+        let mut grey = (0.0f32, 0.0f32);
+        for p in px.chunks_exact(4) {
+            let (b, g, r) = (p[0] as f32 / 255.0, p[1] as f32 / 255.0, p[2] as f32 / 255.0);
+            let max = r.max(g).max(b);
+            let min = r.min(g).min(b);
+            let d = max - min;
+            let sat = if max > 0.0 { d / max } else { 0.0 };
+            if sat < 0.18 || max < 0.12 {
+                grey.0 += max;
+                grey.1 += 1.0;
+                continue;
+            }
+            let hue = if d == 0.0 {
+                0.0
+            } else if max == r {
+                ((g - b) / d).rem_euclid(6.0)
+            } else if max == g {
+                (b - r) / d + 2.0
+            } else {
+                (r - g) / d + 4.0
+            } / 6.0;
+            let i = ((hue * N as f32) as usize).min(N - 1);
+            let w = sat * max;
+            let e = &mut buckets[i];
+            e.0 += r * w;
+            e.1 += g * w;
+            e.2 += b * w;
+            e.3 += w;
+        }
+        let mut order: Vec<usize> = (0..N).filter(|&i| buckets[i].3 > 0.0).collect();
+        order.sort_by(|a, b| buckets[*b].3.total_cmp(&buckets[*a].3));
+        let total: f32 = buckets.iter().map(|b| b.3).sum();
+        let mut out: Vec<Color> = Vec::new();
+        let mut used: Vec<usize> = Vec::new();
+        for i in order {
+            // Skip neighbours of a hue already taken, and hues that barely appear.
+            if used.iter().any(|&u| (i as i32 - u as i32).rem_euclid(N as i32).min((u as i32 - i as i32).rem_euclid(N as i32)) <= 1) {
+                continue;
+            }
+            if !out.is_empty() && buckets[i].3 < total * 0.06 {
+                break;
+            }
+            let (r, g, b, w) = buckets[i];
+            out.push(glowing(r / w, g / w, b / w));
+            used.push(i);
+            if out.len() == 3 {
+                break;
+            }
+        }
+        if out.is_empty() {
+            // A grey cover: a soft white light.
+            let v = if grey.1 > 0.0 { (grey.0 / grey.1).clamp(0.5, 0.9) } else { 0.8 };
+            out.push(Color { r: v, g: v, b: v, a: 1.0 });
+        }
+        Some(out)
+    }
+
+    /// Fills an ellipse with a soft light: `c` in the middle fading to nothing at the edge.
+    pub fn glow(&self, cx: f32, cy: f32, rx: f32, ry: f32, c: Color) {
+        if rx <= 0.0 || ry <= 0.0 || c.a <= 0.0 {
+            return;
+        }
+        unsafe {
+            let stops = [
+                D2D1_GRADIENT_STOP { position: 0.0, color: c },
+                D2D1_GRADIENT_STOP { position: 0.45, color: Color { a: c.a * 0.55, ..c } },
+                D2D1_GRADIENT_STOP { position: 1.0, color: Color { a: 0.0, ..c } },
+            ];
+            let Ok(coll) = self.rt.CreateGradientStopCollection(&stops, D2D1_GAMMA_2_2, D2D1_EXTEND_MODE_CLAMP) else { return };
+            let props = D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES {
+                center: pt(cx, cy),
+                gradientOriginOffset: pt(0.0, 0.0),
+                radiusX: rx,
+                radiusY: ry,
+            };
+            let Ok(brush) = self.rt.CreateRadialGradientBrush(&props, None, &coll) else { return };
+            self.rt.FillEllipse(&D2D1_ELLIPSE { point: pt(cx, cy), radiusX: rx, radiusY: ry }, &brush);
+        }
+    }
+
+    /// Clips what's drawn next to `geo` (anti-aliased edges) until `pop_shape_clip`.
+    pub fn push_shape_clip(&self, geo: &ID2D1Geometry) {
+        unsafe {
+            let mut params = D2D1_LAYER_PARAMETERS {
+                contentBounds: D2D_RECT_F { left: -1.0e6, top: -1.0e6, right: 1.0e6, bottom: 1.0e6 },
+                geometricMask: std::mem::ManuallyDrop::new(Some(geo.clone())),
+                maskAntialiasMode: D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                maskTransform: identity(),
+                opacity: 1.0,
+                opacityBrush: std::mem::ManuallyDrop::new(None),
+                layerOptions: D2D1_LAYER_OPTIONS_NONE,
+            };
+            self.rt.PushLayer(&params, None::<&ID2D1Layer>);
+            std::mem::ManuallyDrop::drop(&mut params.geometricMask);
+        }
+    }
+
+    pub fn pop_shape_clip(&self) {
+        unsafe { self.rt.PopLayer() };
+    }
+
     /// Draws a loaded image filling `r` (cropped to cover), with rounded corners.
     pub fn image(&self, key: u64, r: D2D_RECT_F, radius: f32, opacity: f32) {
         let t = self.tick.get() + 1;
@@ -654,4 +784,10 @@ fn inter_fonts(dwrite: &IDWriteFactory) -> Option<IDWriteFontCollection> {
         let coll = f5.CreateFontCollectionFromFontSet(&set).ok()?;
         coll.cast().ok()
     }
+}
+/// A colour brightened to glow on black (its brightest channel near full), keeping the hue.
+fn glowing(r: f32, g: f32, b: f32) -> Color {
+    let max = r.max(g).max(b).max(0.001);
+    let lift = (0.95 / max).min(3.0);
+    Color { r: (r * lift).min(1.0), g: (g * lift).min(1.0), b: (b * lift).min(1.0), a: 1.0 }
 }
