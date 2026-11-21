@@ -29,3 +29,4 @@ pub mod sound;
 pub mod alarms;
 pub mod awake;
 pub mod updater;
+pub mod hwmon;

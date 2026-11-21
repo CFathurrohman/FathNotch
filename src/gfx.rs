@@ -279,6 +279,26 @@ impl Gfx {
         unsafe { self.rt.SetTransform(&m) };
     }
 
+    /// Maps the layout rectangle `from` onto `to` for everything drawn next (a tab growing out of its icon),
+    /// on top of the current transform. Returns the transform to hand back to `end_morph`.
+    pub fn begin_morph(&self, from: (f32, f32, f32, f32), to: (f32, f32, f32, f32)) -> Matrix3x2 {
+        let prev = *self.origin.borrow();
+        let sx = if from.2 > 0.0 { to.2 / from.2 } else { 1.0 };
+        let sy = if from.3 > 0.0 { to.3 / from.3 } else { 1.0 };
+        let local = Matrix3x2 { M11: sx, M12: 0.0, M21: 0.0, M22: sy, M31: to.0 - from.0 * sx, M32: to.1 - from.1 * sy };
+        let m = mul(&local, &prev);
+        *self.origin.borrow_mut() = m;
+        *self.base.borrow_mut() = m;
+        unsafe { self.rt.SetTransform(&m) };
+        prev
+    }
+
+    pub fn end_morph(&self, prev: Matrix3x2) {
+        *self.origin.borrow_mut() = prev;
+        *self.base.borrow_mut() = prev;
+        unsafe { self.rt.SetTransform(&prev) };
+    }
+
     /// Moves what's drawn next by (dx, dy) layout units (cards rising into place); (0, 0) puts it back.
     pub fn set_offset(&self, dx: f32, dy: f32) {
         let mut m = *self.origin.borrow();

@@ -24,6 +24,17 @@ const RADIUS_OPEN: f32 = 32.0;
 const RADIUS_PEEK: f32 = 28.0;
 /// How long switching tools takes (fade + slide).
 const TOOL_ANIM_SECS: f32 = 0.28;
+/// How long the fluid "grow out of the icon" opening runs (it has settled well before).
+const FLUID_SECS: f32 = 1.0;
+
+/// A springy 0 → 1 (damping 0.78: about 2 % overshoot, settled by ~0.65 s), like a macOS window opening.
+fn spring(t: f32) -> f32 {
+    let w = std::f32::consts::TAU / 0.65;
+    let z = 0.78f32;
+    let wd = w * (1.0 - z * z).sqrt();
+    let t = t.max(0.0);
+    1.0 - (-z * w * t).exp() * ((wd * t).cos() + z * w / wd * (wd * t).sin())
+}
 /// How far a capsule floats below the top edge.
 const GAP: f32 = 8.0;
 const MINI_H: f32 = 40.0;
@@ -97,6 +108,8 @@ pub struct Notch {
     back: Option<&'static str>,
     /// Switching tools: when, and the side the new one comes from (-1 left, 1 right, 0 straight up).
     tool_anim: Option<(Instant, f32)>,
+    /// Where the tool being opened grows from (its tab icon, layout units); None: the notch.
+    tool_from: Option<Rect>,
     alert: Option<Alert>,
     queue: VecDeque<Alert>,
     pub alert_until: Option<Instant>,
@@ -434,6 +447,7 @@ impl Notch {
             tool: tools::find(if s.last_tool.is_empty() { "home" } else { &s.last_tool }).id,
             back: None,
             tool_anim: None,
+            tool_from: None,
             alert: None,
             queue: VecDeque::new(),
             alert_until: None,
@@ -491,6 +505,7 @@ impl Notch {
         views::shown(self.tool, &mut self.views);
         // Opening the panel: the tool's cards come in one by one too.
         self.tool_anim = Some((Instant::now(), 0.0));
+        self.tool_from = None; // grows out of the notch
         self.busy = true;
     }
 
@@ -529,6 +544,8 @@ impl Notch {
             _ => 0.0,
         };
         self.tool_anim = Some((Instant::now(), dir));
+        // Grows out of its icon in the tab bar (when it was picked there); else out of the notch.
+        self.tool_from = self.tab_hits.iter().find(|(_, t)| *t == id).map(|(r, _)| *r);
         // Keep drawing frames from now on, or the transition would be over before the next one.
         self.busy = true;
         self.tool = id;
@@ -588,6 +605,8 @@ impl Notch {
                                 "prayer" => "Maghrib 00:00",
                                 "todos" => "00 open",
                                 "battery" => "100%",
+            "cpu" | "gpu" | "ram" => "100%",
+            "net" => "00.0 MB/s",
                                 _ => "",
                             };
                             self.gfx.measure(&i.value, fs, SEMIBOLD).max(self.gfx.measure(template, fs, SEMIBOLD))
@@ -1257,6 +1276,11 @@ impl Notch {
         // side of its tab (or rising, when opened straight on it).
         // On top, its cards and rows come in one after another, each fading in and rising into place.
         let mut staggering = false;
+        // Settings → Display → "Open from icon": the tool grows out of its tab icon (or out of the notch
+        // when the panel opens) like an app opening on macOS: a rounded card swells from the icon's frame to
+        // the whole content area on a spring (a touch of overshoot, then it settles), the content inside it.
+        let fluid = settings::shared().fluid_open && settings::anim_scale() > 0.0;
+        let mut morph: Option<(f32, Rect)> = None;
         let shift = match self.tool_anim {
             Some((at, dir)) => {
                 let secs = settings::anim_secs(at.elapsed().as_secs_f32());
@@ -1270,8 +1294,16 @@ impl Notch {
                 if k >= 1.0 && secs > TOOL_ANIM_SECS + 0.9 {
                     self.tool_anim = None;
                 }
-                let e = 1.0 - (1.0 - k).powi(3);
-                dir * 28.0 * (1.0 - e)
+                if fluid && secs < FLUID_SECS {
+                    let from = self.tool_from.unwrap_or(Rect::new(full.cx() - 70.0, full.y, 140.0, 34.0));
+                    morph = Some((spring(secs), from));
+                    0.0
+                } else if fluid {
+                    0.0
+                } else {
+                    let e = 1.0 - (1.0 - k).powi(3);
+                    dir * 28.0 * (1.0 - e)
+                }
             }
             None => 0.0,
         };
@@ -1279,11 +1311,29 @@ impl Notch {
         if shift != 0.0 {
             ui.push_clip(Rect::new(full.x + SIDE - 4.0, full.y + HEADER_H - 4.0, CONTENT_W + 8.0, tool_h + 8.0));
         }
+        let morphed = morph.map(|(e, from)| {
+            let lerp = |a: f32, b: f32| a + (b - a) * e;
+            let now = Rect::new(lerp(from.x, content.x), lerp(from.y, content.y), lerp(from.w, content.w), lerp(from.h, content.h));
+            // The card the icon becomes, fading as the content takes over.
+            let card_a = (1.0 - e).clamp(0.0, 1.0);
+            if card_a > 0.01 {
+                ui.fill(now, lerp(10.0, 18.0), with_alpha(t.surface2, card_a));
+            }
+            let prev = ui.g.begin_morph((content.x, content.y, content.w, content.h), (now.x, now.y, now.w, now.h));
+            let alpha = ui.alpha;
+            ui.alpha = alpha * (e * 1.6).clamp(0.0, 1.0);
+            (prev, alpha)
+        });
         views::draw(self.tool, &mut ui, &mut self.views, content, &mut next_tool);
+        if let Some((prev, alpha)) = morphed {
+            ui.alpha = alpha;
+            ui.g.end_morph(prev);
+        }
         if shift != 0.0 {
             ui.pop_clip();
         }
-        if staggering && !ui.end_stagger() && self.tool_anim.is_some_and(|(at, _)| settings::anim_secs(at.elapsed().as_secs_f32()) > TOOL_ANIM_SECS) {
+        let done_after = if fluid { FLUID_SECS } else { TOOL_ANIM_SECS };
+        if staggering && !ui.end_stagger() && self.tool_anim.is_some_and(|(at, _)| settings::anim_secs(at.elapsed().as_secs_f32()) > done_after) {
             self.tool_anim = None;
         }
         if key_tool.is_some() {

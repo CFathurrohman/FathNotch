@@ -399,3 +399,10 @@ mod tests {
         assert!(!list.is_empty());
     }
 }
+
+/// Battery (percent, plugged in) without touching the CPU / network deltas `sample` keeps.
+pub fn battery() -> Option<(u8, bool)> {
+    let mut power = SYSTEM_POWER_STATUS::default();
+    (unsafe { GetSystemPowerStatus(&mut power) }.is_ok() && power.BatteryFlag & 128 == 0 && power.BatteryFlag != 255 && power.BatteryLifePercent <= 100)
+        .then_some((power.BatteryLifePercent, power.ACLineStatus == 1))
+}

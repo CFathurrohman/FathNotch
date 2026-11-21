@@ -834,7 +834,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                             place(hwnd);
                         }
                         let open = with(|n| n.expanded()).unwrap_or(false);
-                        if open || model::activity() != model::Activity::Idle {
+                        if open || model::activity() != model::Activity::Idle || model::idle_live() {
                             redraw(hwnd);
                         }
                     }

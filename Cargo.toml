@@ -43,6 +43,7 @@ features = [
     "Win32_Graphics_Direct2D_Common",
     "Win32_Graphics_DirectWrite",
     "Win32_Graphics_Dwm",
+    "Win32_Graphics_Dxgi", # hardware: GPU names and video memory (services/hwmon.rs)
     "Win32_Graphics_Dxgi_Common",
     "Win32_Graphics_Gdi",
     "Win32_Graphics_Imaging",
@@ -60,6 +61,7 @@ features = [
     "Win32_System_Memory",
     "Win32_System_LibraryLoader",
     "Win32_System_Ole",
+    "Win32_System_Performance", # hardware: per-thread CPU and GPU counters (PDH)
     "Win32_System_Power", # system: battery
     "Win32_System_ProcessStatus",
     "Win32_System_Registry",

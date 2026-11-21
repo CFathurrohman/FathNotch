@@ -26,7 +26,7 @@ pub const TOOLS: &[Tool] = &[
     Tool { id: "prayer", title: "Prayer", icon: "Moon", height: 220.0 },
     Tool { id: "notifications", title: "Notifications", icon: "Bell", height: 220.0 },
     Tool { id: "weather", title: "Weather", icon: "Cloud", height: 245.0 },
-    Tool { id: "system", title: "System", icon: "Cpu", height: 250.0 },
+    Tool { id: "system", title: "Hardware", icon: "Cpu", height: 330.0 },
     Tool { id: "emoji", title: "Emoji", icon: "FaceSmile", height: 245.0 },
 ];
 

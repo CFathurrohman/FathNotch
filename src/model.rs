@@ -462,8 +462,29 @@ fn build_idle_items() -> Vec<IdleItem> {
                 }
             }
             "battery" => {
-                if let Some((pct, charging)) = crate::services::system::sample().battery {
+                if let Some((pct, charging)) = crate::services::system::battery() {
                     out.push(IdleItem { id: "battery", icon: if charging { "Bolt" } else { "BatteryFull" }, value: format!("{pct}%"), accent: false });
+                }
+            }
+            // Live hardware readings (sampled once a second while one of these is shown).
+            "cpu" | "gpu" | "ram" | "net" => {
+                let (samples, cpu, gpu, ram, down, up) = crate::services::hwmon::quick();
+                if samples < 2 {
+                    continue; // the first second has no rates yet
+                }
+                match id.as_str() {
+                    "cpu" => out.push(IdleItem { id: "cpu", icon: "Cpu", value: format!("{cpu:.0}%"), accent: false }),
+                    "gpu" => {
+                        if let Some(g) = gpu {
+                            out.push(IdleItem { id: "gpu", icon: "Monitor", value: format!("{g:.0}%"), accent: false });
+                        }
+                    }
+                    "ram" => out.push(IdleItem { id: "ram", icon: "Memory", value: format!("{ram:.0}%"), accent: false }),
+                    _ => {
+                        // The busier direction: down unless uploading more.
+                        let (icon, rate) = if up > down { ("ArrowUp", up) } else { ("ArrowDown", down) };
+                        out.push(IdleItem { id: "net", icon, value: crate::services::system::rate(rate), accent: false });
+                    }
                 }
             }
             _ => {}
@@ -473,4 +494,9 @@ fn build_idle_items() -> Vec<IdleItem> {
         out.push(IdleItem { id: "clock", icon: "Clock", value: format!("{:02}:{:02}", n.hour, n.minute), accent: false });
     }
     out
+}
+
+/// Whether the idle notch shows a live hardware reading (it then redraws every second).
+pub fn idle_live() -> bool {
+    settings::shared().idle_items.iter().any(|i| matches!(i.as_str(), "cpu" | "gpu" | "ram" | "net"))
 }
