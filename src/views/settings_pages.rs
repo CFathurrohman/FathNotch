@@ -140,10 +140,19 @@ pub fn appearance(p: &mut Pg) {
     if p.free() {
         p.caption("MATERIAL");
         let y = p.y;
-        for (i, (name, sub, glass)) in [("Solid", "Opaque, easiest to read", false), ("Translucent", "Your wallpaper shows through", true)].into_iter().enumerate() {
+        let materials = [
+            ("Solid", "Opaque, easiest to read", false, false),
+            ("Translucent", "Your wallpaper shows through", true, false),
+            ("Frosted", "Blurred glass, like macOS", true, true),
+        ];
+        for (i, (name, sub, glass, frosted)) in materials.into_iter().enumerate() {
             let r = Rect::new(p.x + i as f32 * 167.0, y, 157.0, 108.0);
-            if material_card(p, r, name, sub, glass, s.glass == glass, &s.theme_scheme) && s.glass != glass {
-                settings::update(|x| x.glass = glass);
+            let selected = s.glass == glass && (s.frosted && s.glass) == frosted;
+            if material_card(p, r, name, sub, glass, frosted, selected, &s.theme_scheme) && !selected {
+                settings::update(|x| {
+                    x.glass = glass;
+                    x.frosted = frosted;
+                });
             }
         }
         p.y = y + 112.0;
@@ -209,7 +218,7 @@ pub fn appearance(p: &mut Pg) {
         &[
             R::t(
                 "Translucent",
-                "See-through notch and panels tinted by the color scheme, with a glass sheen. (Windows can't blur behind this kind of window, so it's a clear tint rather than frosted.)",
+                "See-through notch and panels tinted by the color scheme. Frosted (above) blurs what's behind the open panel, from a picture taken as it opens.",
             ),
             R::new("Tint", "Lower shows more of the wallpaper; higher keeps text easier to read.", 170.0, 22.0),
         ],
@@ -235,7 +244,7 @@ pub fn appearance(p: &mut Pg) {
 }
 
 /// Solid / Translucent: the notch as a pill over a bit of "wallpaper", with the name below (157 wide).
-fn material_card(p: &mut Pg, r: Rect, name: &str, sub: &str, glass: bool, selected: bool, scheme_id: &str) -> bool {
+fn material_card(p: &mut Pg, r: Rect, name: &str, sub: &str, glass: bool, frosted: bool, selected: bool, scheme_id: &str) -> bool {
     let t = p.ui.t;
     let sc = theme::scheme(scheme_id);
     let frame = Rect::new(r.x, r.y, 157.0, 71.0);
@@ -244,7 +253,14 @@ fn material_card(p: &mut Pg, r: Rect, name: &str, sub: &str, glass: bool, select
     let wall = frame.inset(3.5, 3.5);
     wallpaper(p, wall, 14.0);
     let pill = Rect::new(wall.cx() - 52.0, wall.cy() - 15.0, 104.0, 30.0);
-    p.ui.fill(pill, 15.0, color(sc.pill, if glass { 0x88 as f32 / 255.0 } else { 1.0 }));
+    if frosted {
+        // A milky, blurred-looking pill: the wallpaper's average colour softened under a light tint.
+        p.ui.fill(pill, 15.0, mix(color(0x3B82F6, 1.0), color(0xEC4899, 1.0), 0.5));
+        p.ui.fill(pill, 15.0, color(0xFFFFFF, 0.18));
+        p.ui.fill(pill, 15.0, color(sc.pill, 0.45));
+    } else {
+        p.ui.fill(pill, 15.0, color(sc.pill, if glass { 0x88 as f32 / 255.0 } else { 1.0 }));
+    }
     p.ui.g.stroke_round(pill.inset(0.5, 0.5).d2d(), 14.5, p.ui.c(color(0xFFFFFF, if glass { 0x60 as f32 / 255.0 } else { 0x20 as f32 / 255.0 })), 1.0);
     let n = crate::notch::now();
     p.ui.text(&format!("{:02}:{:02}", n.hour, n.minute), pill, 12.0, SEMIBOLD, color(sc.text, 1.0), Align::Center);

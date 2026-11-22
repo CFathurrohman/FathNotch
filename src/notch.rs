@@ -25,11 +25,11 @@ const RADIUS_PEEK: f32 = 28.0;
 /// How long switching tools takes (fade + slide).
 const TOOL_ANIM_SECS: f32 = 0.28;
 /// How long the fluid "grow out of the icon" opening runs (it has settled well before).
-const FLUID_SECS: f32 = 1.0;
+const FLUID_SECS: f32 = 0.6;
 
-/// A springy 0 → 1 (damping 0.78: about 2 % overshoot, settled by ~0.65 s), like a macOS window opening.
+/// A springy 0 → 1 (damping 0.78: about 2 % overshoot, settled by ~0.4 s), like a macOS window opening.
 fn spring(t: f32) -> f32 {
-    let w = std::f32::consts::TAU / 0.65;
+    let w = std::f32::consts::TAU / 0.4;
     let z = 0.78f32;
     let wd = w * (1.0 - z * z).sqrt();
     let t = t.max(0.0);
@@ -113,6 +113,8 @@ pub struct Notch {
     /// Lyric glow following the music: beat envelope 0..1, the loudest level heard lately (auto gain),
     /// and when it was last updated.
     beat: (f32, f32, Option<Instant>),
+    /// Frosted glass: when the picture of what's behind was last taken.
+    frost_at: Option<Instant>,
     alert: Option<Alert>,
     queue: VecDeque<Alert>,
     pub alert_until: Option<Instant>,
@@ -452,6 +454,7 @@ impl Notch {
             tool_anim: None,
             tool_from: None,
             beat: (0.0, 0.1, None),
+            frost_at: None,
             alert: None,
             queue: VecDeque::new(),
             alert_until: None,
@@ -511,6 +514,8 @@ impl Notch {
         self.tool_anim = Some((Instant::now(), 0.0));
         self.tool_from = None; // grows out of the notch
         self.busy = true;
+        // Frosted glass: take a fresh picture of what's behind on the next frame.
+        self.frost_at = None;
     }
 
     pub fn collapse(&mut self) {
@@ -943,6 +948,24 @@ impl Notch {
                 c.a *= vis;
             }
         }
+        // Frosted glass: a fresh picture of what's behind every 1.5 s (and when the panel opens). The notch
+        // is left out of screen captures for that moment, so it doesn't photograph itself.
+        let s = settings::shared();
+        let frosted = s.glass && s.frosted;
+        if frosted && self.frost_at.map_or(true, |t| t.elapsed() > Duration::from_millis(1500)) {
+            self.frost_at = Some(Instant::now());
+            unsafe {
+                use windows::Win32::UI::WindowsAndMessaging::{SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE, WDA_NONE};
+                if !s.hide_from_capture {
+                    let _ = SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE);
+                    let _ = windows::Win32::Graphics::Dwm::DwmFlush();
+                }
+                self.gfx.capture_frost(self.win_x + self.shove_px(), self.win_y);
+                if !s.hide_from_capture {
+                    let _ = SetWindowDisplayAffinity(hwnd, WDA_NONE);
+                }
+            }
+        }
         {
             let g = &self.gfx;
             // Closed (no panel showing): only the strip around the pill is drawn and put on screen.
@@ -953,6 +976,12 @@ impl Notch {
                 g.begin_partial(o.x - o.ear - 4.0, o.w + 2.0 * o.ear + 8.0, o.y + o.h + 4.0);
             }
             let geo = o.build(&g.factory)?;
+            // Frosted glass: the blurred picture of what's behind the notch or panel, then the theme's tint.
+            if frosted && g.has_frost() {
+                g.push_shape_clip(&geo.clone().into());
+                g.draw_frost(1.0);
+                g.pop_shape_clip();
+            }
             g.fill_geometry(&geo.clone().into(), theme.pill);
             if settings::shared().notch_border {
                 g.stroke_geometry(&geo.into(), theme.stroke, 1.0);

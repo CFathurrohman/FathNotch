@@ -260,8 +260,8 @@ pub struct Ui<'a> {
 }
 
 /// Staggered entrance: each block starts this much after the one before, takes this long, rising this far.
-const STAGGER_STEP: f32 = 0.045;
-const STAGGER_SECS: f32 = 0.36;
+const STAGGER_STEP: f32 = 0.03;
+const STAGGER_SECS: f32 = 0.24;
 const STAGGER_RISE: f32 = 12.0;
 
 impl<'a> Ui<'a> {
@@ -692,7 +692,8 @@ impl<'a> Ui<'a> {
             }
             let row_h = LIST_ROW;
             let (list, first, rows) = self.list_rect(d.id, d.anchor, d.options.len(), d.selected);
-            self.g.fill_round(list.d2d(), 8.0, self.c(self.t.surface2));
+            // Always solid: in Translucent / Frosted the panel behind would show through the options.
+            self.g.fill_round(list.d2d(), 8.0, self.c(crate::gfx::Color { a: 1.0, ..self.t.surface2 }));
             self.g.stroke_round(list.d2d(), 8.0, self.c(self.t.stroke), 1.0);
             for (i, o) in d.options.iter().enumerate().skip(first).take(rows) {
                 let row = Rect::new(list.x + 4.0, list.y + 4.0 + (i - first) as f32 * row_h, list.w - 8.0, row_h);

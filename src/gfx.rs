@@ -92,6 +92,8 @@ pub struct Gfx {
     images: RefCell<HashMap<u64, (ID2D1Bitmap, u64)>>,
     /// image_palette results by image key.
     colors: RefCell<HashMap<u64, Vec<Color>>>,
+    /// Frosted glass: a blurred picture of the screen behind the canvas (taken when the panel opens).
+    frost: RefCell<Option<ID2D1Bitmap>>,
     tick: std::cell::Cell<u64>,
     /// Rows (px) of the canvas used by the current frame.
     region: std::cell::Cell<i32>,
@@ -185,6 +187,7 @@ impl Gfx {
                 icons: RefCell::new(HashMap::new()),
                 images: RefCell::new(HashMap::new()),
                 colors: RefCell::new(HashMap::new()),
+                frost: RefCell::new(None),
                 tick: std::cell::Cell::new(0),
                 region: std::cell::Cell::new(px_h),
                 region_x: std::cell::Cell::new((0, px_w)),
@@ -674,6 +677,56 @@ impl Gfx {
     }
 
     /// Draws a loaded image filling `r` (cropped to cover), with rounded corners.
+    /// Frosted glass: takes a picture of the screen behind the canvas (window at `x, y`), shrinks it a lot
+    /// and blurs it, so `draw_frost` can lay it under the panel. Windows can't blur behind this kind of
+    /// window itself, so this is taken once as the panel opens.
+    pub fn capture_frost(&self, x: i32, y: i32) {
+        const DOWN: i32 = 14;
+        let (w, h) = ((self.px_w / DOWN).max(2), (self.px_h / DOWN).max(2));
+        let mut px = vec![0u8; (w * h * 4) as usize];
+        unsafe {
+            let screen = GetDC(None);
+            let dc = CreateCompatibleDC(screen);
+            let bmp = CreateCompatibleBitmap(screen, w, h);
+            let old = SelectObject(dc, bmp);
+            SetStretchBltMode(dc, HALFTONE);
+            let _ = StretchBlt(dc, 0, 0, w, h, screen, x, y, self.px_w, self.px_h, SRCCOPY);
+            let mut bi = BITMAPINFO::default();
+            bi.bmiHeader = BITMAPINFOHEADER { biSize: 40, biWidth: w, biHeight: -h, biPlanes: 1, biBitCount: 32, biCompression: 0, ..Default::default() };
+            GetDIBits(dc, bmp, 0, h as u32, Some(px.as_mut_ptr() as *mut _), &mut bi, DIB_RGB_COLORS);
+            SelectObject(dc, old);
+            let _ = DeleteObject(bmp);
+            let _ = DeleteDC(dc);
+            ReleaseDC(None, screen);
+        }
+        // A few box-blur passes on the small picture: smooth light and colour, no detail.
+        for _ in 0..3 {
+            px = box_blur(&px, w as usize, h as usize);
+        }
+        for p in px.chunks_exact_mut(4) {
+            p[3] = 255;
+        }
+        let props = D2D1_BITMAP_PROPERTIES {
+            pixelFormat: D2D1_PIXEL_FORMAT { format: DXGI_FORMAT_B8G8R8A8_UNORM, alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED },
+            dpiX: 96.0,
+            dpiY: 96.0,
+        };
+        let bmp = unsafe { self.rt.CreateBitmap(D2D_SIZE_U { width: w as u32, height: h as u32 }, Some(px.as_ptr() as *const _), (w * 4) as u32, &props) }.ok();
+        *self.frost.borrow_mut() = bmp;
+    }
+
+    pub fn has_frost(&self) -> bool {
+        self.frost.borrow().is_some()
+    }
+
+    /// Lays the frosted picture over the whole canvas (call inside the panel's shape clip).
+    pub fn draw_frost(&self, opacity: f32) {
+        let frost = self.frost.borrow();
+        let Some(bmp) = frost.as_ref() else { return };
+        let r = rect(0.0, 0.0, self.px_w as f32 / self.scale, self.px_h as f32 / self.scale);
+        unsafe { self.rt.DrawBitmap(bmp, Some(&r), opacity, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, None) };
+    }
+
     pub fn image(&self, key: u64, r: D2D_RECT_F, radius: f32, opacity: f32) {
         let t = self.tick.get() + 1;
         self.tick.set(t);
@@ -790,4 +843,30 @@ fn glowing(r: f32, g: f32, b: f32) -> Color {
     let max = r.max(g).max(b).max(0.001);
     let lift = (0.95 / max).min(3.0);
     Color { r: (r * lift).min(1.0), g: (g * lift).min(1.0), b: (b * lift).min(1.0), a: 1.0 }
+}
+
+/// One 3×3 box-blur pass over BGRA pixels (edges clamp).
+fn box_blur(src: &[u8], w: usize, h: usize) -> Vec<u8> {
+    let mut out = vec![0u8; src.len()];
+    for y in 0..h {
+        for x in 0..w {
+            let mut acc = [0u32; 3];
+            let mut n = 0u32;
+            for dy in -1i32..=1 {
+                for dx in -1i32..=1 {
+                    let (sx, sy) = ((x as i32 + dx).clamp(0, w as i32 - 1) as usize, (y as i32 + dy).clamp(0, h as i32 - 1) as usize);
+                    let i = (sy * w + sx) * 4;
+                    acc[0] += src[i] as u32;
+                    acc[1] += src[i + 1] as u32;
+                    acc[2] += src[i + 2] as u32;
+                    n += 1;
+                }
+            }
+            let o = (y * w + x) * 4;
+            out[o] = (acc[0] / n) as u8;
+            out[o + 1] = (acc[1] / n) as u8;
+            out[o + 2] = (acc[2] / n) as u8;
+        }
+    }
+    out
 }

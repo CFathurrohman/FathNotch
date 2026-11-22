@@ -422,7 +422,17 @@ fn slider(ui: &mut Ui, sid: u64, track: Rect, wheel_area: Rect, value: f32) -> O
 /// The C# combo box face over the kit dropdown (Surface2, radius 7, 11.5 text, a thin chevron).
 fn combo(ui: &mut Ui, cid: u64, r: Rect, options: &[String], selected: usize, enabled: bool) -> Option<usize> {
     let t = ui.t;
-    let picked = if enabled { ui.dropdown(cid, r, options, selected) } else { None };
+    // The kit dropdown handles clicks and the list; its own face is clipped away (this one is drawn below),
+    // or it would show through a translucent face as a second, offset label.
+    let picked = if enabled {
+        // Drawing-only clip (ui.push_clip would also block its clicks).
+        ui.g.push_clip(Rect::new(r.x, r.y, 0.0, 0.0).d2d());
+        let p = ui.dropdown(cid, r, options, selected);
+        ui.g.pop_clip();
+        p
+    } else {
+        None
+    };
     let hov = enabled && (ui.hovered(r) || ui.st.dropdown == cid);
     // Hover swaps Surface2 for the translucent hover brush over the card.
     if hov {

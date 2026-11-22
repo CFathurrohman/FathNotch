@@ -834,7 +834,8 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                             place(hwnd);
                         }
                         let open = with(|n| n.expanded()).unwrap_or(false);
-                        if open || model::activity() != model::Activity::Idle || model::idle_live() {
+                        let frosted = { let s = settings::get(); s.glass && s.frosted };
+                        if open || model::activity() != model::Activity::Idle || model::idle_live() || frosted {
                             redraw(hwnd);
                         }
                     }
@@ -864,6 +865,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                 LRESULT(0)
             }
             bg::WM_SETTINGS => {
+                apply_capture_affinity(hwnd);
                 register_hotkeys(hwnd);
                 SetTimer(hwnd, TIMER_IDLE, (settings::get().idle_rotate_sec.max(2) as u32) * 1000, None);
                 SetTimer(hwnd, TIMER_EYES, (settings::get().idle_eyes_every_sec.max(20) as u32) * 1000, None);
@@ -1022,6 +1024,7 @@ fn main() -> Result<()> {
         model::start();
         if shot.is_none() {
             services::updater::start();
+            apply_capture_affinity(hwnd);
         }
         // Control → Awake survives restarts (on the window thread, which lives as long as the app).
         if shot.is_none() && settings::get().keep_awake {
@@ -1245,5 +1248,18 @@ pub fn stat_at(file: &'static str, line: u32) {
         let c = *n;
         drop(g);
         log(&format!("refresh from {file}:{line}: {c}"));
+    }
+}
+
+/// Settings → General "Hide from screenshots": leave the notch out of screenshots, recordings and screen
+/// sharing (Windows draws it on screen as usual).
+fn apply_capture_affinity(hwnd: HWND) {
+    use windows::Win32::UI::WindowsAndMessaging::{SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE, WDA_NONE};
+    if std::env::var_os("FATHNOTCH_SHOT").is_some() {
+        return;
+    }
+    let hide = settings::get().hide_from_capture;
+    unsafe {
+        let _ = SetWindowDisplayAffinity(hwnd, if hide { WDA_EXCLUDEFROMCAPTURE } else { WDA_NONE });
     }
 }

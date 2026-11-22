@@ -114,6 +114,8 @@ pub struct Settings {
     /// "auto" = the scheme's own accent.
     pub theme_accent: String,
     pub glass: bool,
+    /// Frosted glass (with `glass`): a blurred picture of what's behind the panel under a light tint.
+    pub frosted: bool,
     pub glass_strength: f64,
 
     /// Tiny, ExtraSmall, Small, Default, Large, ExtraLarge.
@@ -252,6 +254,7 @@ impl Default for Settings {
             theme_scheme: s("midnight"),
             theme_accent: s("auto"),
             glass: false,
+            frosted: false,
             glass_strength: 0.6,
             notch_size: s("ExtraSmall"),
             notch_max_w: 440,

@@ -83,9 +83,13 @@ pub fn accent(id: &str) -> u32 {
 pub fn build(scheme_id: &str, accent_id: &str, glass: bool, glass_strength: f64) -> Theme {
     let sc = scheme(scheme_id);
     let acc = if accent_id.is_empty() || accent_id == "auto" { accent(sc.accent) } else { accent(accent_id) };
-    // Translucent: panes become see-through, the pill stays mostly solid.
-    let pane = if glass { (0.55 + 0.35 * (1.0 - glass_strength.clamp(0.0, 1.0))) as f32 } else { 1.0 };
-    let pill = if glass { (0.80 + 0.15 * (1.0 - glass_strength.clamp(0.0, 1.0))) as f32 } else { 1.0 };
+    // Translucent: panes become see-through, the pill stays mostly solid. Frosted: the pill is a lighter
+    // tint over the blurred picture behind it (Tint sets how much), the panes lighter still.
+    let k = glass_strength.clamp(0.0, 1.0) as f32;
+    let frosted = glass && settings::shared().frosted;
+    // Tint: lower shows more of what's behind, higher keeps text easier to read (both glass kinds).
+    let pane = if frosted { 0.42 + 0.2 * k } else if glass { 0.42 + 0.4 * k } else { 1.0 };
+    let pill = if frosted { 0.5 + 0.35 * k } else if glass { 0.5 + 0.38 * k } else { 1.0 };
     let text = color(sc.text, 1.0);
     let t = Theme {
         pill: color(sc.pill, pill),

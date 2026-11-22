@@ -994,7 +994,8 @@ fn combo_post(ui: &mut Ui, s: &mut State, bounds: Rect) {
     let full = COMBO_ROW * s.combo_opts.len() as f32 + 8.0;
     let max = (full - list.h).max(0.0);
     s.combo_scroll = s.combo_scroll.clamp(0.0, max);
-    ui.g.fill_round(list.d2d(), 8.0, ui.c(t.surface2));
+    // Always solid: in Translucent / Frosted the page behind would show through the options.
+    ui.g.fill_round(list.d2d(), 8.0, ui.c(crate::gfx::Color { a: 1.0, ..t.surface2 }));
     ui.g.stroke_round(list.inset(0.5, 0.5).d2d(), 7.5, ui.c(t.stroke), 1.0);
     ui.g.push_clip(list.inset(1.0, 3.0).d2d());
     for (i, o) in s.combo_opts.iter().enumerate() {
