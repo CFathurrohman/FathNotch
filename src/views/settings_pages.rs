@@ -323,7 +323,7 @@ fn scheme_card(p: &mut Pg, r: Rect, sc: &theme::Scheme, acc: u32, selected: bool
 
 // ---------------------------------------------------------------- Display
 
-const IDLE_ITEMS: [(&str, &str, &str); 10] = [
+const IDLE_ITEMS: [(&str, &str, &str); 12] = [
     ("clock", "Clock", "Current time."),
     ("date", "Date", "Weekday and date."),
     ("prayer", "Next prayer time", "The next prayer and its time (Settings → Prayer)."),
@@ -334,6 +334,8 @@ const IDLE_ITEMS: [(&str, &str, &str); 10] = [
     ("gpu", "GPU", "Graphics card use (the main card), updated every second."),
     ("ram", "Memory", "How much RAM is in use."),
     ("net", "Internet speed", "Download speed, or upload when that's busier."),
+    ("cputemp", "CPU temperature", "From LibreHardwareMonitor when it's running; otherwise from the processor's built-in graphics, which sits on the same chip (Windows can't read most CPUs on its own)."),
+    ("gputemp", "GPU temperature", "The main graphics card, as Task Manager shows it."),
 ];
 
 pub fn display(p: &mut Pg) {

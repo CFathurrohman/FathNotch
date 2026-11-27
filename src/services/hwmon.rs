@@ -60,6 +60,9 @@ pub struct Hw {
     pub net_up: u64,
     /// Round trip to 1.1.1.1, ms (None while unknown or unreachable).
     pub ping: Option<u32>,
+    /// CPU temperature, °C, and where it came from (LibreHardwareMonitor, or the built-in graphics).
+    pub cpu_temp: Option<f32>,
+    pub cpu_temp_source: &'static str,
     pub battery: Option<(u8, bool)>,
     pub battery_secs: Option<u32>,
     pub cpu_history: VecDeque<f32>,
@@ -87,13 +90,34 @@ pub fn snapshot() -> Hw {
 }
 
 /// Just the numbers the idle notch needs (no history copies).
-pub fn quick() -> (u32, f32, Option<f32>, f32, u64, u64) {
+pub struct Quick {
+    pub samples: u32,
+    pub cpu: f32,
+    pub gpu: Option<f32>,
+    pub ram: f32,
+    pub down: u64,
+    pub up: u64,
+    pub cpu_temp: Option<f32>,
+    pub gpu_temp: Option<f32>,
+}
+
+pub fn quick() -> Quick {
     start();
     let mut s = shared().lock().unwrap_or_else(|e| e.into_inner());
     s.wanted = Some(Instant::now());
     let h = &s.hw;
     let ram = if h.ram_total > 0 { h.ram_used as f32 * 100.0 / h.ram_total as f32 } else { 0.0 };
-    (h.samples, h.cpu, h.gpus.first().map(|g| g.usage), ram, h.net_down, h.net_up)
+    Quick {
+        samples: h.samples,
+        cpu: h.cpu,
+        gpu: h.gpus.first().map(|g| g.usage),
+        ram,
+        down: h.net_down,
+        up: h.net_up,
+        cpu_temp: h.cpu_temp,
+        // The first GPU that reports one (the discrete card comes first).
+        gpu_temp: h.gpus.iter().find_map(|g| g.temp),
+    }
 }
 
 fn start() {
@@ -154,6 +178,7 @@ struct Adapter {
     vendor: u32,
     name: String,
     luid: String,
+    raw_luid: windows::Win32::Foundation::LUID,
     vram_total: u64,
 }
 
@@ -162,6 +187,9 @@ struct Sampler {
     threads: isize,
     gpu_engine: isize,
     gpu_mem: isize,
+    /// LibreHardwareMonitor's WMI sensors (when it runs), and when we last looked for them.
+    lhm: Option<windows::Win32::System::Wmi::IWbemServices>,
+    lhm_at: Option<Instant>,
     adapters: Vec<Adapter>,
     cpu_name: String,
     cores: usize,
@@ -185,6 +213,8 @@ impl Sampler {
             nvml: Nvml::load(),
             n: 0,
             ping: None,
+            lhm: None,
+            lhm_at: None,
         };
         unsafe {
             if PdhOpenQueryW(PCWSTR::null(), 0, &mut s.query) == 0 {
@@ -195,6 +225,49 @@ impl Sampler {
             }
         }
         s
+    }
+
+    /// CPU temperature: LibreHardwareMonitor (or Open Hardware Monitor) when it runs, which reads the chip
+    /// itself; else the processor's built-in graphics (same chip). Windows can't read the CPU itself
+    /// without a driver.
+    fn cpu_temp(&mut self) -> Option<(f32, &'static str)> {
+        use crate::services::brightness::{get_f64, get_str, query, wmi_at};
+        // Look for the monitor's WMI sensors now and then (it may be started later).
+        if self.lhm.is_none() && self.lhm_at.map_or(true, |t| t.elapsed() > Duration::from_secs(20)) {
+            self.lhm_at = Some(Instant::now());
+            self.lhm = wmi_at("root\\LibreHardwareMonitor").or_else(|| wmi_at("root\\OpenHardwareMonitor"));
+        }
+        if let Some(wmi) = &self.lhm {
+            let rows = query(wmi, "SELECT Name, Identifier, Value FROM Sensor WHERE SensorType = 'Temperature'");
+            if rows.is_empty() {
+                self.lhm = None; // closed since
+            }
+            let mut best: Option<(i32, f32)> = None;
+            for r in &rows {
+                let id = get_str(r, "Identifier").unwrap_or_default().to_lowercase();
+                if !(id.contains("cpu") || id.contains("/amdcpu") || id.contains("/intelcpu")) {
+                    continue;
+                }
+                let name = get_str(r, "Name").unwrap_or_default().to_lowercase();
+                let Some(v) = get_f64(r, "Value").map(|v| v as f32).filter(|v| *v > 1.0 && *v < 125.0) else { continue };
+                // The package / Tctl reading is the one to show; any core reading is next best.
+                let rank = if name.contains("package") || name.contains("tctl") || name.contains("tdie") { 2 } else if name.contains("core") { 1 } else { 0 };
+                if best.map_or(true, |(r0, v0)| rank > r0 || (rank == r0 && v > v0)) {
+                    best = Some((rank, v));
+                }
+            }
+            if let Some((_, v)) = best {
+                return Some((v, "LibreHardwareMonitor"));
+            }
+        }
+        // Else the processor's own graphics: on AMD Ryzen and Intel chips with built-in graphics it sits on
+        // the same die, so its temperature (which Windows reports, like Task Manager) is the chip's. Windows'
+        // ACPI "thermal zone" isn't used: on many laptops it measures something else (it read 80-100 °C here
+        // while the chip was at 40 °C).
+        let name = self.cpu_name.to_lowercase();
+        let vendor = if name.contains("amd") { 0x1002 } else if name.contains("intel") { 0x8086 } else { return None };
+        let igpu = self.adapters.iter().find(|a| a.vendor == vendor)?;
+        adapter_temp(igpu.raw_luid).map(|t| (t, "the processor's built-in graphics (same chip)"))
     }
 
     fn sample(&mut self) -> Hw {
@@ -244,7 +317,8 @@ impl Sampler {
                     usage: usage.clamp(0.0, 100.0) as f32,
                     vram_used: mem.get(&a.luid).copied().unwrap_or(0.0) as u64,
                     vram_total: a.vram_total,
-                    temp: self.nvml.as_ref().and_then(|n| n.temp(&a.name)),
+                    // What Task Manager shows (any vendor), else NVIDIA's own library.
+                    temp: adapter_temp(a.raw_luid).or_else(|| self.nvml.as_ref().and_then(|n| n.temp(&a.name))),
                     history: VecDeque::new(),
                 });
             }
@@ -253,6 +327,10 @@ impl Sampler {
             self.ping = ping();
         }
         hw.ping = self.ping;
+        if let Some((t, src)) = self.cpu_temp() {
+            hw.cpu_temp = Some(t);
+            hw.cpu_temp_source = src;
+        }
         hw
     }
 }
@@ -315,7 +393,7 @@ fn adapters() -> Vec<Adapter> {
             if out.iter().any(|x: &Adapter| x.luid == luid) {
                 continue;
             }
-            out.push(Adapter { vendor: d.VendorId, name: clean_gpu(&name), luid, vram_total: d.DedicatedVideoMemory as u64 });
+            out.push(Adapter { vendor: d.VendorId, name: clean_gpu(&name), luid, raw_luid: d.AdapterLuid, vram_total: d.DedicatedVideoMemory as u64 });
         }
     }
     // The discrete card first: NVIDIA, then the one with the most video memory.
@@ -527,4 +605,29 @@ mod tests {
 /// "AMD Radeon(TM) 660M" → "AMD Radeon 660M".
 fn clean_gpu(s: &str) -> String {
     s.replace("(TM)", "").replace("(R)", "").replace(['™', '®'], "").split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// A GPU's temperature as Windows reports it to Task Manager (WDDM 2.4+ drivers, any vendor), °C.
+fn adapter_temp(luid: windows::Win32::Foundation::LUID) -> Option<f32> {
+    use windows::Wdk::Graphics::Direct3D::{
+        D3DKMTCloseAdapter, D3DKMTOpenAdapterFromLuid, D3DKMTQueryAdapterInfo, D3DKMT_ADAPTER_PERFDATA, D3DKMT_CLOSEADAPTER,
+        D3DKMT_OPENADAPTERFROMLUID, D3DKMT_QUERYADAPTERINFO, KMTQAITYPE_ADAPTERPERFDATA,
+    };
+    unsafe {
+        let mut open = D3DKMT_OPENADAPTERFROMLUID { AdapterLuid: luid, hAdapter: 0 };
+        if D3DKMTOpenAdapterFromLuid(&mut open).0 != 0 {
+            return None;
+        }
+        let mut perf = D3DKMT_ADAPTER_PERFDATA::default();
+        let mut q = D3DKMT_QUERYADAPTERINFO {
+            hAdapter: open.hAdapter,
+            Type: KMTQAITYPE_ADAPTERPERFDATA,
+            pPrivateDriverData: &mut perf as *mut _ as *mut _,
+            PrivateDriverDataSize: std::mem::size_of::<D3DKMT_ADAPTER_PERFDATA>() as u32,
+        };
+        let ok = D3DKMTQueryAdapterInfo(&mut q).0 == 0;
+        let _ = D3DKMTCloseAdapter(&D3DKMT_CLOSEADAPTER { hAdapter: open.hAdapter });
+        // Tenths of a degree; 0 when the driver doesn't say.
+        (ok && perf.Temperature > 0 && perf.Temperature < 1300).then(|| perf.Temperature as f32 / 10.0)
+    }
 }

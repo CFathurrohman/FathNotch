@@ -245,10 +245,12 @@ fn performance(ui: &mut Ui, s: &mut State, r: Rect, go: &mut Option<&'static str
     let tx = inner.x + 48.0;
     ui.text("CPU", Rect::new(tx, inner.y + 1.0, 80.0, 20.0), 15.0, SEMIBOLD, t.text, Align::Left);
     let ghz = if hw.mhz > 0 { format!(" · {:.2} GHz", hw.mhz as f32 / 1000.0) } else { String::new() };
-    let spec = format!("{}C {}T{ghz}", hw.cores, hw.logical);
-    ui.text(&spec, Rect::new(tx, inner.y + 21.0, inner.w - 48.0, 15.0), 11.0, REGULAR, t.subtext, Align::Left);
+    // Temperature when something can read it (LibreHardwareMonitor, or a believable Windows sensor).
+    let temp = hw.cpu_temp.map_or(String::new(), |c| format!(" · {c:.0} °C"));
+    let spec = format!("{}C {}T{ghz}{temp}", hw.cores, hw.logical);
+    ui.text(&spec, Rect::new(tx, inner.y + 21.0, inner.w - 48.0 - 58.0, 15.0), 11.0, REGULAR, t.subtext, Align::Left);
     let pct = if ready { format!("{:.0}%", hw.cpu) } else { "–".into() };
-    ui.text(&pct, Rect::new(inner.right() - 70.0, inner.y, 70.0, 30.0), 22.0, SEMIBOLD, t.text, Align::Right);
+    ui.text(&pct, Rect::new(inner.right() - 56.0, inner.y - 1.0, 56.0, 22.0), 18.0, SEMIBOLD, t.text, Align::Right);
     let area = Rect::new(inner.x, inner.y + 46.0, inner.w, inner.bottom() - inner.y - 46.0);
     if s.cpu_history {
         let v: Vec<f32> = hw.cpu_history.iter().copied().collect();
@@ -296,8 +298,8 @@ fn performance(ui: &mut Ui, s: &mut State, r: Rect, go: &mut Option<&'static str
                 s.gpu = n;
             }
         }
-        ui.text(&g.name, Rect::new(tx, inner.y + 21.0, inner.w - 48.0, 15.0), 11.0, REGULAR, t.subtext, Align::Left);
-        ui.text(&format!("{:.0}%", g.usage), Rect::new(inner.right() - 70.0, inner.y, 70.0, 30.0), 22.0, SEMIBOLD, t.text, Align::Right);
+        ui.text(&g.name, Rect::new(tx, inner.y + 21.0, inner.w - 48.0 - 58.0, 15.0), 11.0, REGULAR, t.subtext, Align::Left);
+        ui.text(&format!("{:.0}%", g.usage), Rect::new(inner.right() - 56.0, inner.y - 1.0, 56.0, 22.0), 18.0, SEMIBOLD, t.text, Align::Right);
         let area = Rect::new(inner.x, inner.y + 46.0, inner.w, inner.bottom() - inner.y - 46.0);
         if hov {
             let v: Vec<f32> = g.history.iter().copied().collect();

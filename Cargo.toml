@@ -43,6 +43,7 @@ features = [
     "Win32_Graphics_Direct2D_Common",
     "Win32_Graphics_DirectWrite",
     "Win32_Graphics_Dwm",
+    "Wdk_Graphics_Direct3D", # hardware: GPU temperatures as Task Manager reads them (services/hwmon.rs)
     "Win32_Graphics_Dxgi", # hardware: GPU names and video memory (services/hwmon.rs)
     "Win32_Graphics_Dxgi_Common",
     "Win32_Graphics_Gdi",

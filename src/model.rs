@@ -467,9 +467,12 @@ fn build_idle_items() -> Vec<IdleItem> {
                 }
             }
             // Live hardware readings (sampled once a second while one of these is shown).
-            "cpu" | "gpu" | "ram" | "net" => {
-                let (samples, cpu, gpu, ram, down, up) = crate::services::hwmon::quick();
-                if samples < 2 {
+            "cpu" | "gpu" | "ram" | "net" | "cputemp" | "gputemp" => {
+                let q = crate::services::hwmon::quick();
+                let (cpu, gpu, ram, down, up) = (q.cpu, q.gpu, q.ram, q.down, q.up);
+                // 62° (or 144° in Fahrenheit, like the weather).
+                let deg = |c: f32| if s.use_fahrenheit { format!("{:.0}°F", c * 9.0 / 5.0 + 32.0) } else { format!("{c:.0}°C") };
+                if q.samples < 2 {
                     continue; // the first second has no rates yet
                 }
                 match id.as_str() {
@@ -480,6 +483,17 @@ fn build_idle_items() -> Vec<IdleItem> {
                         }
                     }
                     "ram" => out.push(IdleItem { id: "ram", icon: "Memory", value: format!("{ram:.0}%"), accent: false }),
+                    // Hidden while there is no reading (see Settings: CPU temperature).
+                    "cputemp" => {
+                        if let Some(t) = q.cpu_temp {
+                            out.push(IdleItem { id: "cputemp", icon: "Fire", value: deg(t), accent: t >= 85.0 });
+                        }
+                    }
+                    "gputemp" => {
+                        if let Some(t) = q.gpu_temp {
+                            out.push(IdleItem { id: "gputemp", icon: "Monitor", value: deg(t), accent: t >= 85.0 });
+                        }
+                    }
                     _ => {
                         // The busier direction: down unless uploading more.
                         let (icon, rate) = if up > down { ("ArrowUp", up) } else { ("ArrowDown", down) };
@@ -498,5 +512,5 @@ fn build_idle_items() -> Vec<IdleItem> {
 
 /// Whether the idle notch shows a live hardware reading (it then redraws every second).
 pub fn idle_live() -> bool {
-    settings::shared().idle_items.iter().any(|i| matches!(i.as_str(), "cpu" | "gpu" | "ram" | "net"))
+    settings::shared().idle_items.iter().any(|i| matches!(i.as_str(), "cpu" | "gpu" | "ram" | "net" | "cputemp" | "gputemp"))
 }

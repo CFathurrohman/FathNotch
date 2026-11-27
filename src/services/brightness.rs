@@ -106,10 +106,15 @@ pub fn watch_internal(on_change: fn(u32)) {
 // ---------------------------------------------------------------- WMI (built-in panel)
 
 fn wmi() -> Option<IWbemServices> {
+    wmi_at("root\\WMI")
+}
+
+/// A WMI namespace (on the calling thread's COM apartment).
+pub(crate) fn wmi_at(namespace: &str) -> Option<IWbemServices> {
     unsafe {
         let locator: IWbemLocator = CoCreateInstance(&WbemLocator, None, CLSCTX_INPROC_SERVER).ok()?;
         let services = locator
-            .ConnectServer(&BSTR::from("root\\WMI"), &BSTR::new(), &BSTR::new(), &BSTR::new(), 0, &BSTR::new(), None)
+            .ConnectServer(&BSTR::from(namespace), &BSTR::new(), &BSTR::new(), &BSTR::new(), 0, &BSTR::new(), None)
             .ok()?;
         let _ = CoSetProxyBlanket(
             &services,
@@ -125,7 +130,7 @@ fn wmi() -> Option<IWbemServices> {
     }
 }
 
-fn query(services: &IWbemServices, wql: &str) -> Vec<IWbemClassObject> {
+pub(crate) fn query(services: &IWbemServices, wql: &str) -> Vec<IWbemClassObject> {
     let mut out = Vec::new();
     let Ok(rows) = (unsafe {
         services.ExecQuery(
@@ -339,4 +344,20 @@ mod tests {
             std::thread::sleep(Duration::from_millis(1000));
         }
     }
+}
+
+/// A number property of a WMI object (any numeric VARIANT).
+pub(crate) fn get_f64(obj: &IWbemClassObject, name: &str) -> Option<f64> {
+    let mut value = VARIANT::default();
+    let n = windows::core::HSTRING::from(name);
+    unsafe { obj.Get(&n, 0, &mut value, None, None) }.ok()?;
+    f64::try_from(&value).ok().or_else(|| i32::try_from(&value).ok().map(f64::from))
+}
+
+/// A text property of a WMI object.
+pub(crate) fn get_str(obj: &IWbemClassObject, name: &str) -> Option<String> {
+    let mut value = VARIANT::default();
+    let n = windows::core::HSTRING::from(name);
+    unsafe { obj.Get(&n, 0, &mut value, None, None) }.ok()?;
+    BSTR::try_from(&value).ok().map(|b| b.to_string())
 }

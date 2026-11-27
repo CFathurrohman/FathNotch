@@ -615,6 +615,7 @@ impl Notch {
                                 "todos" => "00 open",
                                 "battery" => "100%",
             "cpu" | "gpu" | "ram" => "100%",
+            "cputemp" | "gputemp" => "100°C",
             "net" => "00.0 MB/s",
                                 _ => "",
                             };
