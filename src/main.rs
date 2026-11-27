@@ -870,7 +870,10 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                 SetTimer(hwnd, TIMER_IDLE, (settings::get().idle_rotate_sec.max(2) as u32) * 1000, None);
                 SetTimer(hwnd, TIMER_EYES, (settings::get().idle_eyes_every_sec.max(20) as u32) * 1000, None);
                 MONITOR.with(|m| *m.borrow_mut() = 0);
-                with(|n| n.activity_changed());
+                with(|n| {
+                    n.activity_changed();
+                    n.refit_open();
+                });
                 if settings::get().repel_cursor {
                     SetTimer(hwnd, TIMER_DODGE, 300, None);
                 }

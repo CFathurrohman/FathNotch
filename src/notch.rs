@@ -400,6 +400,19 @@ pub fn now() -> Now {
 const MUSIC_LEFT: f32 = 44.0;
 const MUSIC_RIGHT: f32 = 48.0;
 /// Widest the closed notch grows for a long lyric line or several idle items (Settings → Display).
+/// The widest an "All in a row" notch may get: the canvas (the window is as wide as the open panel).
+const ROW_MAX_W: f32 = CANVAS_W - 40.0;
+
+/// The idle items an "All in a row" notch shows: the first ones, as many as "Items in a row" allows.
+fn row_items() -> Vec<model::IdleItem> {
+    let mut items = model::idle_items();
+    let n = settings::shared().idle_row_max;
+    if n > 0 {
+        items.truncate(n as usize);
+    }
+    items
+}
+
 fn notch_max_w() -> f32 {
     // A smaller Notch size keeps the grown notch smaller too (Tiny: 60 % of the limit, Default and up: all).
     let scale = (idle_size().0 / 196.0).clamp(0.6, 1.0);
@@ -585,12 +598,14 @@ impl Notch {
             }
             model::Activity::Timer => w + if w < 170.0 { 34.0 } else { 44.0 },
             model::Activity::Idle => match settings::shared().idle_layout.as_str() {
+                // All in a row: as many items as Settings → Display "Items in a row" allows, as long as they
+                // need (it may grow wide; only the screen-sized canvas stops it).
                 "Row" => {
                     let fs = idle_font(h);
-                    let items = model::idle_items();
+                    let items = row_items();
                     let total: f32 = items.iter().map(|i| 20.0 + self.gfx.measure(&i.value, fs, SEMIBOLD)).sum::<f32>()
                         + 18.0 * (items.len() as f32 - 1.0).max(0.0);
-                    (total + 40.0).min(notch_max_w()).max(w)
+                    (total + 40.0).min(ROW_MAX_W).max(w)
                 }
                 // First item on the left, the widest of the others on the right (they rotate there); with one
                 // item it is drawn like Rotate, so it is sized like it too.
@@ -666,6 +681,19 @@ impl Notch {
     }
 
     /// The closed notch's content changed (music started, a timer ran out…).
+    /// Settings changed while the panel is open (Panel size…): grow or shrink it to the new size.
+    pub fn refit_open(&mut self) {
+        if !self.expanded {
+            return;
+        }
+        let (w, h) = self.open_size();
+        if (self.width.target - w).abs() > 0.5 || (self.height.target - h).abs() > 0.5 {
+            self.width.target = w;
+            self.height.target = h;
+            self.busy = true;
+        }
+    }
+
     pub fn activity_changed(&mut self) {
         if !self.expanded && self.alert.is_none() {
             self.resize_closed();
@@ -1178,8 +1206,9 @@ impl Notch {
                 match layout.as_str() {
                     // Every item side by side.
                     "Row" => {
+                        let items = row_items();
                         let mut widths: Vec<f32> = items.iter().map(|i| 20.0 + g.measure(&i.value, fs, SEMIBOLD)).collect();
-                        // Only the items that fit the notch's width limit (Settings → Display), first ones first.
+                        // Only the items that fit (Items in a row, and the canvas), first ones first.
                         while widths.len() > 1 && widths.iter().sum::<f32>() + 18.0 * (widths.len() as f32 - 1.0) > r.w - 36.0 {
                             widths.pop();
                         }

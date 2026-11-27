@@ -105,6 +105,8 @@ pub struct Settings {
     /// "Rotate" | "Split" | "Row"
     pub idle_layout: String,
     pub idle_rotate_sec: i32,
+    /// "All in a row": how many idle items show at most (0 = all of them).
+    pub idle_row_max: i32,
 
     pub last_tool: String,
     pub check_for_updates: bool,
@@ -248,6 +250,7 @@ impl Default for Settings {
             idle_items: vec![s("clock")],
             idle_layout: s("Rotate"),
             idle_rotate_sec: 8,
+            idle_row_max: 0,
             last_tool: s("home"),
             check_for_updates: true,
             update_notified: None,

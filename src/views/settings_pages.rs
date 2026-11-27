@@ -402,6 +402,7 @@ pub fn display(p: &mut Pg) {
         Some("IDLE NOTCH"),
         &[
             R::c("Layout", "How several items share the closed notch when nothing is playing.", 180.0),
+            R::c("Items in a row", "With All in a row: how many of the items below show, in their order. The notch grows as wide as they need.", 140.0),
             R::c("Rotate every", "How long each item stays before the next one slides in.", 140.0),
             R::t("Peeking eyes", "Now and then a pair of cat eyes peeks out of the resting notch, blinks and looks around for a few seconds."),
             R::c("Eyes every", "How often the eyes come out while nothing is happening.", 140.0),
@@ -410,12 +411,13 @@ pub fn display(p: &mut Pg) {
     );
     let layouts = ["Rotate".to_string(), "Split".into(), "Row".into()];
     p.pick(rr[0], "set.idlelayout", &["Rotate one at a time", "Left and right", "All in a row"], &layouts, &s.idle_layout, 0, |x, v| x.idle_layout = v);
-    p.pick(rr[1], "set.idlesec", &["4 seconds", "8 seconds", "15 seconds", "30 seconds"], &[4, 8, 15, 30], &s.idle_rotate_sec, 0, |x, v| x.idle_rotate_sec = v);
-    p.tog(rr[2], s.idle_eyes, |x, v| x.idle_eyes = v);
-    p.pick(rr[3], "set.eyes", &["20 seconds", "45 seconds", "1.5 minutes", "3 minutes"], &[20, 45, 90, 180], &s.idle_eyes_every_sec, 0, |x, v| {
+    p.pick(rr[1], "set.idlerow", &["All", "2", "3", "4", "5", "6", "8"], &[0, 2, 3, 4, 5, 6, 8], &s.idle_row_max, 0, |x, v| x.idle_row_max = v);
+    p.pick(rr[2], "set.idlesec", &["4 seconds", "8 seconds", "15 seconds", "30 seconds"], &[4, 8, 15, 30], &s.idle_rotate_sec, 0, |x, v| x.idle_rotate_sec = v);
+    p.tog(rr[3], s.idle_eyes, |x, v| x.idle_eyes = v);
+    p.pick(rr[4], "set.eyes", &["20 seconds", "45 seconds", "1.5 minutes", "3 minutes"], &[20, 45, 90, 180], &s.idle_eyes_every_sec, 0, |x, v| {
         x.idle_eyes_every_sec = v
     });
-    p.tog(rr[4], s.eyes_when_hidden, |x, v| x.eyes_when_hidden = v);
+    p.tog(rr[5], s.eyes_when_hidden, |x, v| x.eyes_when_hidden = v);
 
     let rows: Vec<R> = IDLE_ITEMS.iter().map(|(_, name, desc)| R::t(*name, *desc)).collect();
     let rr = p.card(Some("SHOW WHEN IDLE"), &rows);
